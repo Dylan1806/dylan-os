@@ -1,0 +1,442 @@
+import { closeTask, loadDashboard, reopenTask, TodoistError } from "./api.js";
+import { chicagoHour, chicagoToday, clockText, mondayOf } from "./dates.js";
+import { buildModel } from "./model.js";
+import { renderSettings, renderShell, renderToasts } from "./views.js";
+
+const TOKEN_KEY = "dylan-os.token";
+const SETTINGS_KEY = "dylan-os.settings";
+const CACHE_KEY = "dylan-os.cache";
+
+const state = {
+  token: "",
+  screen: "setup",
+  error: "",
+  banner: "",
+  tab: "home",
+  course: "",
+  scope: "upcoming",
+  month: "",
+  calFilter: "all",
+  workoutWeek: "",
+  showCompleted: false,
+  refreshing: false,
+  offline: false,
+  updatedLabel: "",
+  raw: null,
+  model: null,
+  pending: new Map(),
+  reopened: new Set(),
+  toasts: [],
+  settings: { personal: [], links: [] },
+  settingsOpen: false,
+  settingsError: "",
+  selectedDay: "",
+};
+
+const actions = {
+  saveToken,
+  signOut,
+  refresh: () => refresh({ silent: false }),
+  setTab,
+  complete,
+  reopen,
+  openCourse,
+  setScope: (value) => { state.scope = value; renderShellOnly(); },
+  setMonth: (value) => { state.month = value; state.selectedDay = ""; renderShellOnly(); },
+  setCalFilter: (value) => { state.calFilter = value; state.selectedDay = ""; renderShellOnly(); },
+  setWorkoutWeek: (value) => { state.workoutWeek = value; renderShellOnly(); },
+  toggleCompleted: (value) => { state.showCompleted = value; renderShellOnly(); },
+  selectDay: (iso) => { state.selectedDay = state.selectedDay === iso ? "" : iso; renderShellOnly(); },
+  openSettings,
+  closeSettings,
+  editSettings,
+  saveSettings,
+};
+
+function safeHttp(href) {
+  try {
+    const url = new URL(href);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+function loadSettings() {
+  try {
+    const value = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}");
+    const personal = Array.isArray(value.personal) ? value.personal.filter((row) => row && row.label).map((row) => ({ label: String(row.label), value: String(row.value || "") })) : [];
+    const links = Array.isArray(value.links) ? value.links.filter((link) => link && link.label && safeHttp(link.href)).map((link) => ({ label: String(link.label), href: String(link.href) })) : [];
+    return { personal, links };
+  } catch {
+    return { personal: [], links: [] };
+  }
+}
+
+function readCache() {
+  try {
+    const value = JSON.parse(localStorage.getItem(CACHE_KEY) || "null");
+    if (value && Array.isArray(value.osTasks)) return value;
+  } catch {
+    // ignore a damaged cache
+  }
+  return null;
+}
+
+function writeCache(raw) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({
+      os: raw.os ? { id: raw.os.id, name: raw.os.name } : null,
+      digest: raw.digest ? { id: raw.digest.id, name: raw.digest.name } : null,
+      sections: raw.sections,
+      osTasks: raw.osTasks,
+      digestTasks: raw.digestTasks,
+      completed: raw.completed,
+    }));
+  } catch {
+    // the dashboard still works if the browser refuses the copy
+  }
+}
+
+function viewRaw() {
+  const raw = state.raw;
+  if (!raw) return null;
+  const digestId = raw.digest?.id ? String(raw.digest.id) : "";
+  const completed = (raw.completed || []).filter((task) => !state.reopened.has(String(task.id)));
+  const revived = (raw.completed || []).filter((task) => state.reopened.has(String(task.id))).map((task) => ({ ...task, checked: false, completed: false }));
+  return {
+    ...raw,
+    completed,
+    osTasks: [...(raw.osTasks || []), ...revived.filter((task) => String(task.project_id) !== digestId)],
+    digestTasks: [...(raw.digestTasks || []), ...revived.filter((task) => digestId && String(task.project_id) === digestId)],
+  };
+}
+
+function rebuild() {
+  const raw = viewRaw();
+  if (!raw) return;
+  const today = chicagoToday();
+  state.model = buildModel({
+    sections: raw.sections,
+    osTasks: raw.osTasks,
+    digestTasks: raw.digestTasks,
+    completed: raw.completed,
+    digestProjectId: raw.digest?.id || "",
+    today,
+  });
+  if (!state.month) state.month = today.slice(0, 7);
+  if (!state.workoutWeek) state.workoutWeek = mondayOf(today);
+  if (!state.course || !state.model.courses.some((course) => course.code === state.course && !course.task.completed)) {
+    state.course = state.model.courses.find((course) => !course.task.completed)?.code || "";
+  }
+}
+
+function renderShellOnly() {
+  const y = window.scrollY;
+  try {
+    document.getElementById("shell").replaceChildren(renderShell(state, actions));
+  } catch (error) {
+    document.getElementById("shell").replaceChildren(document.createTextNode(error?.message || "The dashboard could not be drawn."));
+    return;
+  }
+  window.scrollTo(0, y);
+  tickClock();
+}
+
+function renderModal() {
+  const node = renderSettings(state, actions);
+  const root = document.getElementById("modal");
+  root.replaceChildren(node || document.createTextNode(""));
+  if (!node) root.textContent = "";
+}
+
+function renderToastBox() {
+  document.getElementById("toasts").replaceChildren(...renderToasts(state.toasts, reopen));
+}
+
+function render() {
+  renderShellOnly();
+  renderModal();
+  renderToastBox();
+}
+
+function applyRaw(raw, { offline = false } = {}) {
+  state.raw = raw;
+  state.offline = offline;
+  state.refreshing = false;
+  state.screen = "app";
+  state.error = "";
+  rebuild();
+  if (!offline) {
+    writeCache(raw);
+    state.updatedLabel = "Updated just now";
+  } else {
+    state.updatedLabel = "Saved copy";
+  }
+  render();
+}
+
+async function saveToken(token) {
+  if (!token) {
+    state.error = "Paste a token first.";
+    render();
+    return;
+  }
+  state.screen = "loading";
+  state.error = "";
+  state.banner = "";
+  render();
+  try {
+    const raw = await loadDashboard(token);
+    state.token = token;
+    localStorage.setItem(TOKEN_KEY, token);
+    applyRaw(raw);
+  } catch (error) {
+    state.token = "";
+    state.screen = "setup";
+    state.error = error instanceof TodoistError ? error.message : "Couldn't reach Todoist. Check your connection and try again.";
+    render();
+  }
+}
+
+function signOut() {
+  if (!window.confirm("Sign out on this device? The token and the saved copy of your lists will be removed from this browser.")) return;
+  clearSession();
+  state.screen = "setup";
+  state.error = "";
+  render();
+}
+
+function clearSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(CACHE_KEY);
+  state.token = "";
+  state.raw = null;
+  state.model = null;
+  state.pending.clear();
+  state.reopened.clear();
+  state.toasts.forEach((toast) => clearTimeout(toast.timer));
+  state.toasts = [];
+  state.banner = "";
+  state.updatedLabel = "";
+  state.offline = false;
+}
+
+function forceAuth(message) {
+  localStorage.removeItem(TOKEN_KEY);
+  state.token = "";
+  state.screen = "setup";
+  state.error = message;
+  state.refreshing = false;
+  state.pending.clear();
+  render();
+}
+
+async function refresh({ silent }) {
+  if (!state.token || state.refreshing) return;
+  if (silent && (state.pending.size || state.settingsOpen)) return;
+  state.refreshing = true;
+  if (!silent) state.banner = "";
+  renderShellOnly();
+  try {
+    const raw = await loadDashboard(state.token);
+    state.pending.clear();
+    state.reopened.clear();
+    applyRaw(raw);
+  } catch (error) {
+    state.refreshing = false;
+    if (error instanceof TodoistError && error.auth) {
+      forceAuth(error.message);
+      return;
+    }
+    state.banner = error instanceof TodoistError ? error.message : "Couldn't reach Todoist. Check your connection and try again.";
+    if (!navigator.onLine) state.offline = true;
+    render();
+  }
+}
+
+function setTab(tab) {
+  state.tab = tab;
+  state.selectedDay = "";
+  renderShellOnly();
+  window.scrollTo(0, 0);
+}
+
+function openCourse(code) {
+  state.course = code;
+  state.tab = "school";
+  state.scope = "upcoming";
+  renderShellOnly();
+  window.scrollTo(0, 0);
+}
+
+function removeToast(id) {
+  const toast = state.toasts.find((item) => item.id === id);
+  if (toast) clearTimeout(toast.timer);
+  state.toasts = state.toasts.filter((item) => item.id !== id);
+  renderToastBox();
+}
+
+function pushToast(task) {
+  removeToast(task.id);
+  const toast = { id: task.id, title: task.content, task };
+  toast.timer = setTimeout(() => removeToast(task.id), 5000);
+  state.toasts = [...state.toasts, toast];
+  renderToastBox();
+}
+
+function complete(task) {
+  if (!task?.id || state.pending.has(task.id) || task.completed) return;
+  const entry = { phase: "checking", cancelled: false, closed: false };
+  state.pending.set(task.id, entry);
+  renderShellOnly();
+  entry.timer = setTimeout(() => {
+    if (entry.cancelled) return;
+    entry.phase = "gone";
+    pushToast(task);
+    renderShellOnly();
+  }, 400);
+  entry.done = closeTask(state.token, task.id).then(() => {
+    entry.closed = true;
+  }).catch((error) => {
+    if (entry.cancelled) return;
+    clearTimeout(entry.timer);
+    state.pending.delete(task.id);
+    removeToast(task.id);
+    if (error instanceof TodoistError && error.auth) {
+      forceAuth(error.message);
+      return;
+    }
+    state.banner = "Could not complete that task. It is still open.";
+    render();
+  });
+}
+
+function reopen(task) {
+  const entry = state.pending.get(task.id);
+  if (entry) {
+    entry.cancelled = true;
+    clearTimeout(entry.timer);
+    state.pending.delete(task.id);
+    removeToast(task.id);
+    renderShellOnly();
+    entry.done.then(() => {
+      if (!entry.closed) return null;
+      return reopenTask(state.token, task.id);
+    }).catch(() => {
+      state.banner = "Could not reopen that task. Refresh to see the current list.";
+      render();
+    });
+    return;
+  }
+  if (!task?.completed) return;
+  state.reopened.add(task.id);
+  rebuild();
+  renderShellOnly();
+  reopenTask(state.token, task.id).catch((error) => {
+    state.reopened.delete(task.id);
+    if (error instanceof TodoistError && error.auth) {
+      forceAuth(error.message);
+      return;
+    }
+    state.banner = "Could not reopen that task.";
+    rebuild();
+    render();
+  });
+}
+
+function openSettings() {
+  state.settingsOpen = true;
+  state.settingsError = "";
+  renderModal();
+}
+
+function closeSettings() {
+  state.settingsOpen = false;
+  state.settings = loadSettings();
+  state.settingsError = "";
+  render();
+}
+
+function editSettings(next) {
+  state.settings = next;
+  renderModal();
+}
+
+function saveSettings(draft) {
+  const links = [];
+  for (const link of draft.links) {
+    if (!link.label && !link.href) continue;
+    if (!link.label || !safeHttp(link.href)) {
+      state.settingsError = "Each link needs a name and an http or https address.";
+      renderModal();
+      return;
+    }
+    links.push(link);
+  }
+  const personal = draft.personal.filter((row) => row.label).map((row) => ({ label: row.label, value: row.value }));
+  state.settings = { personal, links };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(state.settings));
+  state.settingsOpen = false;
+  state.settingsError = "";
+  render();
+}
+
+function tickClock() {
+  const text = clockText();
+  for (const node of document.querySelectorAll("[data-clock=time]")) node.textContent = text.time;
+  for (const node of document.querySelectorAll("[data-clock=date]")) node.textContent = text.date;
+  const line = document.querySelector("[data-now=line]");
+  if (line) line.style.top = `${36 + (chicagoHour() - 7) * 40}px`;
+  if (state.model && chicagoToday() !== state.model.today && state.raw) {
+    rebuild();
+    renderShellOnly();
+  }
+}
+
+function boot() {
+  state.settings = loadSettings();
+  const token = localStorage.getItem(TOKEN_KEY) || "";
+  if (!token) {
+    state.screen = "setup";
+    render();
+    return;
+  }
+  state.token = token;
+  state.screen = "loading";
+  render();
+  loadDashboard(token).then((raw) => applyRaw(raw)).catch((error) => {
+    if (error instanceof TodoistError && error.auth) {
+      forceAuth(error.message);
+      return;
+    }
+    const cached = readCache();
+    if (cached) {
+      state.banner = error instanceof TodoistError ? error.message : "Couldn't reach Todoist. Showing the last copy saved on this device.";
+      applyRaw(cached, { offline: true });
+      return;
+    }
+    state.screen = "setup";
+    state.error = error instanceof TodoistError ? error.message : "Couldn't reach Todoist. Check your connection and try again.";
+    render();
+  });
+}
+
+let focusTimer = 0;
+function onFocus() {
+  if (document.visibilityState === "hidden") return;
+  clearTimeout(focusTimer);
+  focusTimer = setTimeout(() => {
+    if (state.token && state.screen === "app") refresh({ silent: true });
+  }, 300);
+}
+
+document.addEventListener("visibilitychange", onFocus);
+window.addEventListener("focus", onFocus);
+setInterval(tickClock, 1000);
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch(() => {});
+}
+
+boot();
