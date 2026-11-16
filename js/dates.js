@@ -165,6 +165,13 @@ export function chicagoToday(date = new Date()) {
   return chicagoParts(date).iso;
 }
 
+export function analogAngles(date) {
+  const seconds = date.getSeconds() + date.getMilliseconds() / 1000;
+  const minutes = date.getMinutes() + seconds / 60;
+  const hours = (date.getHours() % 12) + minutes / 60;
+  return { hour: hours * 30, minute: minutes * 6, second: seconds * 6 };
+}
+
 export function clockText(date = new Date()) {
   const time = date.toLocaleTimeString("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" });
   const day = date.toLocaleDateString("en-US", { timeZone: TZ, weekday: "long", month: "short", day: "numeric" });

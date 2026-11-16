@@ -3,6 +3,7 @@ import test from "node:test";
 import { closeTask, getAll, TodoistError } from "../js/api.js";
 import {
   addDays,
+  analogAngles,
   assignmentStatus,
   chicagoParts,
   dueParts,
@@ -25,6 +26,16 @@ import {
   springWeekEvents,
   springWhen,
 } from "../js/model.js";
+
+test("analog hands follow the device clock", () => {
+  const three = new Date(2026, 0, 1, 3, 0, 0, 0);
+  assert.deepEqual(analogAngles(three), { hour: 90, minute: 0, second: 0 });
+  const half = new Date(2026, 0, 1, 3, 30, 30, 0);
+  const angles = analogAngles(half);
+  assert.equal(angles.minute, 183);
+  assert.equal(angles.second, 180);
+  assert.ok(Math.abs(angles.hour - 105.25) < 0.001);
+});
 
 test("week boundaries stay on the calendar, including Sunday", () => {
   assert.equal(weekEnd("2026-11-16"), "2026-11-22"); // Monday

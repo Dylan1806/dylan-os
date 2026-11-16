@@ -1,5 +1,5 @@
 import { closeTask, loadDashboard, reopenTask, TodoistError } from "./api.js";
-import { chicagoHour, chicagoToday, clockText, mondayOf } from "./dates.js";
+import { analogAngles, chicagoHour, chicagoToday, clockText, mondayOf } from "./dates.js";
 import { buildModel } from "./model.js";
 import { renderSettings, renderShell, renderToasts } from "./views.js";
 
@@ -382,8 +382,21 @@ function saveSettings(draft) {
   render();
 }
 
+function tickAnalog(date = new Date()) {
+  const angles = analogAngles(date);
+  const label = `Local time ${date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+  for (const face of document.querySelectorAll("[data-analog]")) {
+    if (face.getAttribute("aria-label") !== label) face.setAttribute("aria-label", label);
+    for (const name of ["hour", "minute", "second"]) {
+      const hand = face.querySelector(`[data-hand="${name}"]`);
+      if (hand) hand.setAttribute("transform", `rotate(${angles[name]} 50 50)`);
+    }
+  }
+}
+
 function tickClock() {
   const text = clockText();
+  tickAnalog();
   for (const node of document.querySelectorAll("[data-clock=time]")) node.textContent = text.time;
   for (const node of document.querySelectorAll("[data-clock=date]")) node.textContent = text.date;
   const line = document.querySelector("[data-now=line]");
@@ -434,6 +447,11 @@ function onFocus() {
 document.addEventListener("visibilitychange", onFocus);
 window.addEventListener("focus", onFocus);
 setInterval(tickClock, 1000);
+function paintAnalog() {
+  tickAnalog();
+  requestAnimationFrame(paintAnalog);
+}
+requestAnimationFrame(paintAnalog);
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});

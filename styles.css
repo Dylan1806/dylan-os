@@ -1,59 +1,33 @@
 :root {
-  color-scheme: light;
-  --bg: #ffffff;
-  --bg-subtle: #f7f7f5;
-  --text: #1f1f1f;
-  --text-2: #6b6b6b;
-  --text-3: #9b9b9b;
-  --accent: #2383e2;
-  --warning: #c76b00;
-  --danger: #d44c47;
+  color-scheme: dark;
+  --bg: #000000;
+  --bg-subtle: #111111;
+  --text: #f0f0f0;
+  --text-2: #b5b5b5;
+  --text-3: #8a8a8a;
+  --accent: #5aa7e8;
+  --warning: #ffb15a;
+  --danger: #ff7b72;
   --fill-accent: #2383e2;
-  --fill-2: #ebebea;
-  --border: #e3e3e0;
-  --border-subtle: #efefed;
-  --border-strong: #c8c8c5;
-  --focus: #2383e2;
+  --fill-2: #1c1c1c;
+  --border: #2c2c2c;
+  --border-subtle: #242424;
+  --border-strong: #4a4a4a;
+  --focus: #5aa7e8;
   --on-color: #ffffff;
-  --seg-on: #ffffff;
-  --pill-accent-bg: #e7f0fb;
-  --pill-warning-bg: #fbefe0;
-  --pill-success-bg: #e6f4ea;
-  --pill-danger-bg: #fbe9e8;
-  --pill-success-fg: #2e7d4f;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+  --seg-on: #2a2a2a;
+  --pill-accent-bg: #16324a;
+  --pill-warning-bg: #3a2814;
+  --pill-success-bg: #143222;
+  --pill-danger-bg: #3a1818;
+  --pill-success-fg: #7dcea0;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
   --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --bg: #191919;
-    --bg-subtle: #202020;
-    --text: #e9e9e7;
-    --text-2: #a3a3a3;
-    --text-3: #7a7a7a;
-    --accent: #529cca;
-    --warning: #ffa344;
-    --danger: #ff7369;
-    --fill-accent: #2383e2;
-    --fill-2: #2f2f2f;
-    --border: #373737;
-    --border-subtle: #2a2a2a;
-    --border-strong: #4a4a4a;
-    --focus: #529cca;
-    --seg-on: #2f2f2f;
-    --pill-accent-bg: #1f3348;
-    --pill-warning-bg: #3d2a12;
-    --pill-success-bg: #16331f;
-    --pill-danger-bg: #3d1a18;
-    --pill-success-fg: #6cc28a;
-  }
 }
 
 * { box-sizing: border-box; }
 
-html, body { margin: 0; padding: 0; }
+html, body { margin: 0; padding: 0; background: #000; }
 
 body {
   background: var(--bg);
@@ -89,9 +63,24 @@ h1 {
 
 .summary { margin: 4px 0 16px; color: var(--text-2); }
 
-.cover { border-radius: 10px; overflow: hidden; }
+.cover { position: relative; border-radius: 10px; overflow: hidden; }
 
-.cover svg { display: block; width: 100%; height: 170px; }
+.cover > svg { display: block; width: 100%; height: 170px; }
+
+.analog {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 86px;
+  height: 86px;
+  filter: drop-shadow(0 8px 16px rgba(0, 0, 0, 0.55));
+}
+
+.analog svg { display: block; width: 100%; height: 100%; }
+
+@media (max-width: 600px) {
+  .analog { top: 10px; left: 10px; width: 64px; height: 64px; }
+}
 
 .icon-tile {
   margin-top: -34px;
@@ -148,13 +137,7 @@ h1 {
 .seg button[aria-selected="true"] {
   background: var(--seg-on);
   color: var(--text);
-  box-shadow: var(--shadow);
-}
-
-@media (prefers-color-scheme: dark) {
-  .seg button[aria-selected="true"] {
-    box-shadow: 0 0 0 1px var(--border), var(--shadow);
-  }
+  box-shadow: 0 0 0 1px var(--border), var(--shadow);
 }
 
 .toggle {
@@ -173,13 +156,9 @@ h1 {
   width: 28px;
   height: 16px;
   border-radius: 999px;
-  background: #c8c8c5;
+  background: #3a3a3a;
   position: relative;
   flex: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  .switch { background: #4a4a4a; }
 }
 
 .switch::after {
@@ -621,7 +600,8 @@ button.card { width: 100%; text-align: left; cursor: pointer; }
 
 .block {
   position: absolute;
-  background: #4c7bf426;
+  background: #4c7bf459;
+  color: #f3f6ff;
   border-left: 3px solid #4c7bf4;
   border-radius: 4px;
   font-size: 11px;
@@ -707,7 +687,7 @@ button.card { width: 100%; text-align: left; cursor: pointer; }
 .modal-back {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.72);
   z-index: 30;
   display: flex;
   justify-content: center;
@@ -718,7 +698,7 @@ button.card { width: 100%; text-align: left; cursor: pointer; }
 
 .modal {
   width: min(520px, 100%);
-  background: var(--bg);
+  background: #111111;
   color: var(--text);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -746,8 +726,9 @@ button.card { width: 100%; text-align: left; cursor: pointer; }
 
 .toast {
   pointer-events: auto;
-  background: var(--text);
-  color: var(--bg);
+  background: #1a1a1a;
+  color: var(--text);
+  border: 1px solid #3a3a3a;
   border-radius: 8px;
   padding: 10px 12px;
   display: flex;

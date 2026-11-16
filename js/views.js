@@ -104,7 +104,45 @@ function cover() {
     svgEl("polygon", { points: "0,170 140,80 260,150 400,60 540,150 680,70 820,160 980,90 1120,150 1280,80 1280,220 0,220", fill: "#3E4C66" }),
     svgEl("polygon", { points: "0,190 180,120 330,180 500,110 700,185 880,125 1060,180 1280,120 1280,220 0,220", fill: "#2C3850" }),
     ...pines,
-  ));
+  ), analogClock());
+}
+
+function analogClock() {
+  const ticks = [];
+  for (let i = 0; i < 12; i++) {
+    const major = i % 3 === 0;
+    ticks.push(svgEl("line", {
+      x1: "50",
+      y1: major ? "8" : "11",
+      x2: "50",
+      y2: major ? "16" : "15",
+      stroke: "rgba(255,255,255,0.88)",
+      "stroke-width": major ? "2.4" : "1.2",
+      "stroke-linecap": "round",
+      transform: `rotate(${i * 30} 50 50)`,
+    }));
+  }
+  const hand = (name, y1, y2, width, color) => svgEl("g", { "data-hand": name }, svgEl("line", {
+    x1: "50",
+    y1,
+    x2: "50",
+    y2,
+    stroke: color,
+    "stroke-width": width,
+    "stroke-linecap": "round",
+  }));
+  return h("div", { class: "analog", "data-analog": "1", role: "img", "aria-label": "Local time" },
+    svgEl("svg", { viewBox: "0 0 100 100" },
+      svgEl("circle", { cx: "50", cy: "50", r: "47.5", fill: "#111111", stroke: "rgba(255,255,255,0.72)", "stroke-width": "2" }),
+      svgEl("circle", { cx: "50", cy: "50", r: "41", fill: "none", stroke: "rgba(255,255,255,0.14)", "stroke-width": "1" }),
+      ...ticks,
+      hand("hour", "54", "30", "3.6", "#f5f5f5"),
+      hand("minute", "56", "18", "2.3", "#f5f5f5"),
+      hand("second", "60", "14", "1.15", "#ff7369"),
+      svgEl("circle", { cx: "50", cy: "50", r: "2.8", fill: "#f5f5f5" }),
+      svgEl("circle", { cx: "50", cy: "50", r: "1.3", fill: "#ff7369" }),
+    ),
+  );
 }
 
 function art(kind, color) {
