@@ -35,4 +35,12 @@ node --test
 
 ## Deploy
 
-Pushes to `main` run `.github/workflows/pages.yml`, which publishes the site with GitHub Pages. The live site is [https://dylan1806.github.io/dylan-os/](https://dylan1806.github.io/dylan-os/).
+Pushes to `main` run `.github/workflows/pages.yml`.
+
+The workflow asks GitHub to turn Pages on (`enablement: true`), but GitHub does not let the built-in `GITHUB_TOKEN` create a Pages site. A person with admin access has to do that once:
+
+1. Open [Settings → Pages](https://github.com/Dylan1806/dylan-os/settings/pages).
+2. Under **Build and deployment**, set **Source** to **GitHub Actions**.
+3. Re-run the **Deploy GitHub Pages** workflow from the Actions tab.
+
+After that, every push to `main` publishes [https://dylan1806.github.io/dylan-os/](https://dylan1806.github.io/dylan-os/).
