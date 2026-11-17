@@ -864,8 +864,8 @@ function life(state, actions) {
 function header(state, actions) {
   const count = (state.model?.completedCount || 0) + [...(state.pending?.values() || [])].filter((entry) => entry.phase === "gone").length;
   return [
-    h("h1", null, "Dylan OS"),
-    h("p", { class: "summary" }, "School, ROTC, and life in one place."),
+    h("h1", null, "Dashboard"),
+    h("p", { class: "summary" }, "Personal dashboard."),
     cover(),
     h("div", { class: "icon-tile", "aria-hidden": "true" }, "🎓"),
     h("div", { class: "controls" },
