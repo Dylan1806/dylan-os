@@ -12,6 +12,8 @@ This app is not created by, affiliated with, or supported by Todoist.
 
 The Life tab includes a reading card. Adding or editing a book, and checking off a daily read, writes back to Todoist. Nothing about a book is stored in this repo.
 
+The Home column can show a Spotify embed from a link saved in the browser. Connecting Spotify for playback controls uses a client ID that also stays on the device.
+
 ## Develop
 
 Serve this folder with any static server. `node --test` runs the checks.

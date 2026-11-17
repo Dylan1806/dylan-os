@@ -1,6 +1,17 @@
 import { closeTask, createSection, createTask, loadDashboard, reopenTask, TodoistError, updateTask } from "./api.js";
-import { addDays, analogAngles, chicagoHour, chicagoToday, clockText, mondayOf } from "./dates.js";
+import { addDays, analogAngles, chicagoHour, chicagoToday, mondayOf, sidebarClockParts } from "./dates.js";
 import { adjustChapter, bookDescription, buildModel, incrementChapter, parseBookForm, readingProgress } from "./model.js";
+import {
+  authorizeUrl,
+  codeChallenge,
+  noDevice,
+  parseSpotifyLink,
+  premiumRequired,
+  randomVerifier,
+  SPOTIFY_REDIRECT,
+  spotifyFetch,
+  tokenBody,
+} from "./spotify.js";
 import { renderSettings, renderShell, renderToasts } from "./views.js";
 
 const TOKEN_KEY = "dylan-os.token";
@@ -35,6 +46,18 @@ const state = {
   readingError: "",
   readingBusy: false,
   readingUndo: null,
+  spotify: {
+    clientId: "",
+    embed: null,
+    embedError: "",
+    connected: false,
+    settings: false,
+    player: null,
+    playlists: [],
+    devices: [],
+    note: "",
+    premium: true,
+  },
 };
 
 const actions = {
@@ -61,6 +84,15 @@ const actions = {
   adjustChapter: changeChapter,
   readToday,
   undoReading,
+  saveSpotifyEmbed,
+  clearSpotifyEmbed,
+  saveSpotifyClient,
+  connectSpotify,
+  disconnectSpotify,
+  toggleSpotifySettings,
+  spotifyControl,
+  spotifyPlay,
+  spotifyTransfer,
 };
 
 function safeHttp(href) {
@@ -666,10 +698,18 @@ function tickAnalog(date = new Date()) {
 }
 
 function tickClock() {
-  const text = clockText();
+  const text = sidebarClockParts(new Date());
   tickAnalog();
-  for (const node of document.querySelectorAll("[data-clock=time]")) node.textContent = text.time;
-  for (const node of document.querySelectorAll("[data-clock=date]")) node.textContent = text.date;
+  for (const node of document.querySelectorAll("[data-clock=hms]")) node.textContent = text.time;
+  for (const node of document.querySelectorAll("[data-clock=day]")) node.textContent = text.date;
+  const bar = document.querySelector("[data-np=bar]");
+  const player = state.spotify?.player;
+  if (bar && player?.item?.duration_ms) {
+    let ms = player.progress_ms || 0;
+    if (player.is_playing && player.fetchedAt) ms += Date.now() - player.fetchedAt;
+    const pct = Math.max(0, Math.min(100, (ms / player.item.duration_ms) * 100));
+    bar.style.width = `${pct}%`;
+  }
   const line = document.querySelector("[data-now=line]");
   if (line) line.style.top = `${36 + (chicagoHour() - 7) * 40}px`;
   if (state.model && chicagoToday() !== state.model.today && state.raw) {
@@ -678,7 +718,248 @@ function tickClock() {
   }
 }
 
+const SPOTIFY_KEYS = {
+  clientId: "dashboard.spotify.clientId",
+  embed: "dashboard.spotify.embed",
+  tokens: "dashboard.spotify.tokens",
+  verifier: "dashboard.spotify.verifier",
+  state: "dashboard.spotify.state",
+};
+
+function loadSpotifyStore() {
+  let embed = null;
+  let tokens = null;
+  try { embed = JSON.parse(localStorage.getItem(SPOTIFY_KEYS.embed) || "null"); } catch { embed = null; }
+  try { tokens = JSON.parse(localStorage.getItem(SPOTIFY_KEYS.tokens) || "null"); } catch { tokens = null; }
+  state.spotify.clientId = localStorage.getItem(SPOTIFY_KEYS.clientId) || "";
+  state.spotify.embed = embed && embed.id ? embed : null;
+  state.spotify.tokens = tokens;
+  state.spotify.connected = !!(tokens && tokens.refresh_token);
+}
+
+function saveSpotifyEmbed(value) {
+  const parsed = parseSpotifyLink(value);
+  if (!parsed) {
+    state.spotify.embedError = "Paste an open.spotify.com playlist, album, or track link.";
+    renderShellOnly();
+    return;
+  }
+  state.spotify.embed = parsed;
+  state.spotify.embedError = "";
+  localStorage.setItem(SPOTIFY_KEYS.embed, JSON.stringify(parsed));
+  renderShellOnly();
+}
+
+function clearSpotifyEmbed() {
+  state.spotify.embed = null;
+  localStorage.removeItem(SPOTIFY_KEYS.embed);
+  renderShellOnly();
+}
+
+function saveSpotifyClient(value) {
+  const id = String(value || "").trim();
+  state.spotify.clientId = id;
+  if (id) localStorage.setItem(SPOTIFY_KEYS.clientId, id);
+  else localStorage.removeItem(SPOTIFY_KEYS.clientId);
+  state.spotify.settings = true;
+  renderShellOnly();
+}
+
+function toggleSpotifySettings() {
+  state.spotify.settings = !state.spotify.settings;
+  renderShellOnly();
+}
+
+function disconnectSpotify() {
+  localStorage.removeItem(SPOTIFY_KEYS.tokens);
+  state.spotify.tokens = null;
+  state.spotify.connected = false;
+  state.spotify.player = null;
+  state.spotify.playlists = [];
+  state.spotify.devices = [];
+  state.spotify.note = "";
+  renderShellOnly();
+}
+
+async function connectSpotify() {
+  const clientId = state.spotify.clientId || localStorage.getItem(SPOTIFY_KEYS.clientId) || "";
+  if (!clientId) {
+    state.spotify.settings = true;
+    state.spotify.embedError = "Save a Spotify client ID in Settings first.";
+    renderShellOnly();
+    return;
+  }
+  const verifier = randomVerifier();
+  const challenge = await codeChallenge(verifier);
+  const oauthState = randomVerifier().slice(0, 16);
+  localStorage.setItem(SPOTIFY_KEYS.verifier, verifier);
+  localStorage.setItem(SPOTIFY_KEYS.state, oauthState);
+  localStorage.setItem(SPOTIFY_KEYS.clientId, clientId);
+  location.assign(authorizeUrl({ clientId, challenge, state: oauthState }));
+}
+
+async function spotifyToken(body) {
+  const response = await fetch("https://accounts.spotify.com/api/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: tokenBody({ ...body, client_id: state.spotify.clientId, redirect_uri: SPOTIFY_REDIRECT }),
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(json.error_description || json.error || "Spotify did not return a token.");
+  const tokens = {
+    access_token: json.access_token,
+    refresh_token: json.refresh_token || state.spotify.tokens?.refresh_token || "",
+    expires_at: Date.now() + (Number(json.expires_in) || 3600) * 1000 - 60000,
+  };
+  state.spotify.tokens = tokens;
+  state.spotify.connected = !!tokens.refresh_token || !!tokens.access_token;
+  localStorage.setItem(SPOTIFY_KEYS.tokens, JSON.stringify(tokens));
+  return tokens;
+}
+
+async function spotifyAccess() {
+  const tokens = state.spotify.tokens;
+  if (!tokens?.access_token) return "";
+  if (tokens.expires_at && Date.now() < tokens.expires_at) return tokens.access_token;
+  if (!tokens.refresh_token) return "";
+  const next = await spotifyToken({ grant_type: "refresh_token", refresh_token: tokens.refresh_token });
+  return next.access_token;
+}
+
+async function consumeSpotifyRedirect() {
+  const params = new URLSearchParams(location.search);
+  const code = params.get("code");
+  const error = params.get("error");
+  if (!code && !error) return;
+  const returned = params.get("state");
+  history.replaceState({}, "", `${location.pathname}${location.hash}`);
+  if (error) {
+    state.spotify.note = "Spotify authorization was cancelled.";
+    return;
+  }
+  if (!returned || returned !== localStorage.getItem(SPOTIFY_KEYS.state)) {
+    state.spotify.note = "Spotify returned an unexpected response. Connect again.";
+    return;
+  }
+  const verifier = localStorage.getItem(SPOTIFY_KEYS.verifier) || "";
+  localStorage.removeItem(SPOTIFY_KEYS.verifier);
+  localStorage.removeItem(SPOTIFY_KEYS.state);
+  try {
+    await spotifyToken({ grant_type: "authorization_code", code, code_verifier: verifier });
+    await loadSpotifyPlayer(true);
+  } catch (err) {
+    state.spotify.note = err.message || "Could not connect Spotify.";
+  }
+}
+
+function shapePlayer(body) {
+  if (!body || !body.item) return { is_playing: !!body?.is_playing, progress_ms: body?.progress_ms || 0, item: null, device: body?.device || null, fetchedAt: Date.now() };
+  const images = body.item.album?.images || body.item.images || [];
+  return {
+    is_playing: !!body.is_playing,
+    progress_ms: body.progress_ms || 0,
+    fetchedAt: Date.now(),
+    device: body.device || null,
+    item: {
+      name: body.item.name || "",
+      artists: (body.item.artists || []).map((artist) => artist.name).filter(Boolean).join(", "),
+      duration_ms: body.item.duration_ms || 0,
+      image: images[images.length - 1]?.url || images[0]?.url || "",
+    },
+  };
+}
+
+async function loadSpotifyPlayer(full) {
+  const access = await spotifyAccess();
+  if (!access) return;
+  const player = await spotifyFetch(access, "/me/player");
+  if (player.status === 401) {
+    disconnectSpotify();
+    state.spotify.note = "Spotify session expired. Connect again.";
+    renderShellOnly();
+    return;
+  }
+  const noteBefore = state.spotify.note;
+  if (player.status === 204 || player.status === 200) {
+    state.spotify.player = player.status === 204 ? null : shapePlayer(player.body);
+    if (player.status === 204) state.spotify.note = "Nothing is playing. Open Spotify on a device, or start a playlist below.";
+    else if (!state.spotify.note?.includes("Premium")) state.spotify.note = "";
+  }
+  if (full || !(state.spotify.playlists || []).length) {
+    const lists = await spotifyFetch(access, "/me/playlists?limit=50");
+    if (lists.status === 200) {
+      state.spotify.playlists = (lists.body?.items || []).map((item) => ({ name: item.name, uri: item.uri, id: item.id })).filter((item) => item.uri);
+    }
+  }
+  const live = document.querySelector("[data-spotify-live]");
+  if (live && !full && state.spotify.note === noteBefore) paintSpotifyLive();
+  else renderShellOnly();
+}
+
+function paintSpotifyLive() {
+  const title = document.querySelector("[data-np=title]");
+  if (!title) {
+    renderShellOnly();
+    return;
+  }
+  const item = state.spotify.player?.item;
+  title.textContent = item?.name || "Nothing playing";
+  const artist = document.querySelector("[data-np=artist]");
+  if (artist) artist.textContent = item?.artists || "";
+  const image = document.querySelector("[data-np=art]");
+  if (image && item?.image) image.src = item.image;
+  const toggle = document.querySelector("[data-np=toggle]");
+  if (toggle) {
+    const playing = !!state.spotify.player?.is_playing;
+    toggle.textContent = playing ? "⏸" : "▶";
+    toggle.setAttribute("aria-label", playing ? "Pause" : "Play");
+  }
+}
+
+async function spotifyCommand(path, { method = "PUT", json = null } = {}) {
+  const access = await spotifyAccess();
+  if (!access) return null;
+  const result = await spotifyFetch(access, path, { method, json });
+  if (premiumRequired(result)) {
+    state.spotify.premium = false;
+    state.spotify.note = "Playback controls need Spotify Premium. The embed below still works.";
+    renderShellOnly();
+    return result;
+  }
+  if (noDevice(result)) {
+    const devices = await spotifyFetch(access, "/me/player/devices");
+    state.spotify.devices = devices.status === 200 ? (devices.body?.devices || []) : [];
+    state.spotify.note = state.spotify.devices.length
+      ? "No active device. Transfer playback to one below."
+      : "No active Spotify device. Open the Spotify app, then try again.";
+    renderShellOnly();
+    return result;
+  }
+  state.spotify.devices = [];
+  if (result.status >= 200 && result.status < 300) state.spotify.note = "";
+  await loadSpotifyPlayer(false);
+  return result;
+}
+
+function spotifyControl(action) {
+  if (action === "next") return spotifyCommand("/me/player/next", { method: "POST" });
+  if (action === "previous") return spotifyCommand("/me/player/previous", { method: "POST" });
+  if (action === "pause") return spotifyCommand("/me/player/pause", { method: "PUT" });
+  return spotifyCommand("/me/player/play", { method: "PUT" });
+}
+
+function spotifyPlay(uri) {
+  return spotifyCommand("/me/player/play", { method: "PUT", json: { context_uri: uri } });
+}
+
+function spotifyTransfer(deviceId) {
+  return spotifyCommand("/me/player", { method: "PUT", json: { device_ids: [deviceId], play: true } });
+}
+
 function boot() {
+  loadSpotifyStore();
+  if (state.spotify.connected) loadSpotifyPlayer(true).catch(() => {});
+  consumeSpotifyRedirect();
   state.settings = loadSettings();
   const token = localStorage.getItem(TOKEN_KEY) || "";
   if (!token) {
@@ -718,6 +999,10 @@ function onFocus() {
 document.addEventListener("visibilitychange", onFocus);
 window.addEventListener("focus", onFocus);
 setInterval(tickClock, 1000);
+setInterval(() => {
+  if (document.visibilityState === "hidden" || !state.spotify.connected) return;
+  loadSpotifyPlayer(false).catch(() => {});
+}, 8000);
 function paintAnalog() {
   tickAnalog();
   requestAnimationFrame(paintAnalog);

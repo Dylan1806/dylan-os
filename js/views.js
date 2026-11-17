@@ -20,7 +20,6 @@ import {
   addDays,
   assignmentStatus,
   chicagoHour,
-  clockText,
   diffDays,
   DOW_SHORT,
   fd,
@@ -28,8 +27,10 @@ import {
   monthCells,
   relative,
   shiftMonth,
+  sidebarClockParts,
   weekdayIndex,
 } from "./dates.js";
+import { embedHeight, embedSrc, SPOTIFY_REDIRECT } from "./spotify.js";
 
 const BROWN = "#4A3A30";
 const NAVY = "#1F3864";
@@ -105,44 +106,40 @@ function cover() {
     svgEl("polygon", { points: "0,170 140,80 260,150 400,60 540,150 680,70 820,160 980,90 1120,150 1280,80 1280,220 0,220", fill: "#3E4C66" }),
     svgEl("polygon", { points: "0,190 180,120 330,180 500,110 700,185 880,125 1060,180 1280,120 1280,220 0,220", fill: "#2C3850" }),
     ...pines,
-  ), analogClock());
+  ));
 }
 
-function analogClock() {
+function homeClock() {
   const ticks = [];
-  for (let i = 0; i < 12; i++) {
-    const major = i % 3 === 0;
+  for (let i = 0; i < 60; i++) {
+    const hour = i % 5 === 0;
     ticks.push(svgEl("line", {
       x1: "50",
-      y1: major ? "8" : "11",
+      y1: "3.5",
       x2: "50",
-      y2: major ? "16" : "15",
-      stroke: "rgba(255,255,255,0.88)",
-      "stroke-width": major ? "2.4" : "1.2",
+      y2: hour ? "10" : "7",
+      stroke: "rgba(255,255,255,0.92)",
+      "stroke-width": hour ? "0.9" : "0.45",
       "stroke-linecap": "round",
-      transform: `rotate(${i * 30} 50 50)`,
+      transform: `rotate(${i * 6} 50 50)`,
     }));
   }
-  const hand = (name, y1, y2, width, color) => svgEl("g", { "data-hand": name }, svgEl("line", {
-    x1: "50",
-    y1,
-    x2: "50",
-    y2,
-    stroke: color,
-    "stroke-width": width,
-    "stroke-linecap": "round",
+  const hand = (name, y1, y2, width) => svgEl("g", { "data-hand": name }, svgEl("line", {
+    x1: "50", y1, x2: "50", y2, stroke: "#ffffff", "stroke-width": width, "stroke-linecap": "round",
   }));
-  return h("div", { class: "analog", "data-analog": "1", role: "img", "aria-label": "Local time" },
-    svgEl("svg", { viewBox: "0 0 100 100" },
-      svgEl("circle", { cx: "50", cy: "50", r: "47.5", fill: "#111111", stroke: "rgba(255,255,255,0.72)", "stroke-width": "2" }),
-      svgEl("circle", { cx: "50", cy: "50", r: "41", fill: "none", stroke: "rgba(255,255,255,0.14)", "stroke-width": "1" }),
-      ...ticks,
-      hand("hour", "54", "30", "3.6", "#f5f5f5"),
-      hand("minute", "56", "18", "2.3", "#f5f5f5"),
-      hand("second", "60", "14", "1.15", "#ff7369"),
-      svgEl("circle", { cx: "50", cy: "50", r: "2.8", fill: "#f5f5f5" }),
-      svgEl("circle", { cx: "50", cy: "50", r: "1.3", fill: "#ff7369" }),
+  const parts = sidebarClockParts(new Date());
+  return h("div", { class: "home-clock" },
+    h("div", { class: "analog", "data-analog": "1", role: "img", "aria-label": `Local time ${parts.time}` },
+      svgEl("svg", { viewBox: "0 0 100 100" },
+        ...ticks,
+        hand("hour", "52", "30", "1.35"),
+        hand("minute", "56", "16", "0.95"),
+        hand("second", "62", "12", "0.55"),
+        svgEl("circle", { cx: "50", cy: "50", r: "1.1", fill: "#ffffff" }),
+      ),
     ),
+    h("div", { class: "home-digital", "data-clock": "hms" }, parts.time),
+    h("div", { class: "home-date", "data-clock": "day" }, parts.date),
   );
 }
 
@@ -260,11 +257,87 @@ function empty(text) {
   return card(h("span", { class: "sub" }, text));
 }
 
-function clock() {
-  const now = clockText();
-  return h("div", { class: "card clock" },
-    h("div", { class: "clock-time", "data-clock": "time" }, now.time),
-    h("div", { class: "clock-date", "data-clock": "date" }, now.date),
+function spotifyLive(state, actions) {
+  const spotify = state.spotify || {};
+  const player = spotify.player;
+  const item = player?.item;
+  const duration = item?.duration_ms || 0;
+  const progress = duration ? Math.min(100, Math.round(((player.progress_ms || 0) / duration) * 100)) : 0;
+  return h("div", { "data-spotify-live": "1" },
+    spotify.connected ? h("div", { class: "np" },
+      item?.image ? h("img", { src: item.image, alt: "", "data-np": "art" }) : null,
+      h("div", { style: { flex: "1", minWidth: "0" } },
+        h("div", { class: "np-title", "data-np": "title" }, item?.name || "Nothing playing"),
+        h("div", { class: "sub", "data-np": "artist" }, item?.artists || ""),
+        duration ? h("div", { class: "prog", style: { marginTop: "6px" } },
+          h("div", { class: "track" }, h("div", { class: "fill", "data-np": "bar", style: { width: `${progress}%`, background: "#1ed760" } })),
+        ) : null,
+      ),
+    ) : null,
+    spotify.connected ? h("div", { class: "spotify-controls" },
+      h("button", { type: "button", class: "icon-btn", "aria-label": "Previous", onclick: () => actions.spotifyControl("previous") }, "⏮"),
+      h("button", { type: "button", class: "icon-btn", "data-np": "toggle", "aria-label": player?.is_playing ? "Pause" : "Play", onclick: () => actions.spotifyControl(player?.is_playing ? "pause" : "play") }, player?.is_playing ? "⏸" : "▶"),
+      h("button", { type: "button", class: "icon-btn", "aria-label": "Next", onclick: () => actions.spotifyControl("next") }, "⏭"),
+    ) : null,
+    spotify.note ? h("p", { class: "sub" }, spotify.note) : null,
+    (spotify.devices || []).length ? h("div", { class: "spotify-list" }, spotify.devices.map((device) => h("button", {
+      type: "button",
+      onclick: () => actions.spotifyTransfer(device.id),
+    }, `Transfer to ${device.name}${device.is_active ? " (active)" : ""}`))) : null,
+  );
+}
+
+function spotifyCard(state, actions) {
+  const spotify = state.spotify || {};
+  const embed = spotify.embed;
+  return h("div", { class: "spotify-card" },
+    spotifyLive(state, actions),
+    (spotify.playlists || []).length ? h("div", { class: "spotify-list" }, spotify.playlists.map((list) => h("button", {
+      type: "button",
+      onclick: () => actions.spotifyPlay(list.uri),
+    }, list.name))) : null,
+    embed ? h("iframe", {
+      title: "Spotify",
+      src: embedSrc(embed),
+      height: String(embedHeight(embed)),
+      allow: "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture",
+      loading: "lazy",
+      style: { marginTop: "10px" },
+    }) : h("form", {
+      onsubmit: (event) => {
+        event.preventDefault();
+        actions.saveSpotifyEmbed(new FormData(event.target).get("link"));
+      },
+    },
+      h("label", { class: "field" }, "Playlist, album, or track link",
+        h("input", { name: "link", placeholder: "https://open.spotify.com/playlist/…", autocomplete: "off" }),
+      ),
+      h("button", { class: "primary", type: "submit" }, "Set playlist"),
+    ),
+    spotify.embedError ? h("p", { class: "alert", role: "alert" }, spotify.embedError) : null,
+    h("div", { class: "reading-actions", style: { marginTop: "8px" } },
+      spotify.connected
+        ? h("button", { type: "button", class: "ghost", onclick: actions.disconnectSpotify }, "Disconnect")
+        : h("button", { type: "button", class: "ghost", onclick: actions.connectSpotify }, "Connect Spotify"),
+      h("button", { type: "button", class: "ghost", onclick: actions.toggleSpotifySettings }, "Settings"),
+      embed ? h("button", { type: "button", class: "ghost", onclick: actions.clearSpotifyEmbed }, "Remove embed") : null,
+    ),
+    spotify.settings ? h("div", { class: "spotify-help" },
+      h("p", { class: "sub" }, "Optional playback controls: create an app at developer.spotify.com, add this redirect URI, then paste the client ID. It stays in this browser only."),
+      h("p", { class: "sub" }, SPOTIFY_REDIRECT),
+      h("p", { class: "sub" }, "Controlling playback needs Spotify Premium and an open Spotify app. Without that, the embed still plays."),
+      h("form", {
+        onsubmit: (event) => {
+          event.preventDefault();
+          actions.saveSpotifyClient(new FormData(event.target).get("client"));
+        },
+      },
+        h("label", { class: "field" }, "Spotify client ID",
+          h("input", { name: "client", value: spotify.clientId || "", autocomplete: "off", spellcheck: "false" }),
+        ),
+        h("button", { class: "primary", type: "submit" }, "Save client ID"),
+      ),
+    ) : null,
   );
 }
 
@@ -536,8 +609,9 @@ function home(state, actions) {
   const next = workouts[0];
   return h("div", { class: "stack" },
     h("div", { class: "row" },
-      col(1, 230,
-        clock(),
+      col(0.9, 300,
+        homeClock(),
+        spotifyCard(state, actions),
         h("div", null,
           bar("🧭", "Navigation"),
           card([

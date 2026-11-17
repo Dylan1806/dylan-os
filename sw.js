@@ -1,4 +1,4 @@
-const CACHE = "dylan-os-shell-v3";
+const CACHE = "dylan-os-shell-v4";
 const ASSETS = [
   "./",
   "./index.html",
@@ -9,6 +9,7 @@ const ASSETS = [
   "./js/dates.js",
   "./js/dom.js",
   "./js/model.js",
+  "./js/spotify.js",
   "./js/views.js",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

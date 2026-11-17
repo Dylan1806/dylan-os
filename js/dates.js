@@ -165,6 +165,16 @@ export function chicagoToday(date = new Date()) {
   return chicagoParts(date).iso;
 }
 
+export function sidebarClockParts(date) {
+  const pad = (value) => String(value).padStart(2, "0");
+  const dow = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][date.getDay()];
+  const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][date.getMonth()];
+  return {
+    time: `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`,
+    date: `${dow} ${mon} ${date.getDate()}`,
+  };
+}
+
 export function analogAngles(date) {
   const seconds = date.getSeconds() + date.getMilliseconds() / 1000;
   const minutes = date.getMinutes() + seconds / 60;
