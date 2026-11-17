@@ -21,13 +21,18 @@ function errorFor(status) {
   return new TodoistError(`Todoist returned an error (${status}). Try refreshing.`, { status });
 }
 
-async function request(token, path, { method = "GET", query = null, fetchImpl = fetch, timeout = 20000 } = {}) {
+async function request(token, path, { method = "GET", query = null, json = null, fetchImpl = fetch, timeout = 20000 } = {}) {
   const url = new URL(path.replace(/^\//, ""), ROOT);
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value != null && value !== "") url.searchParams.set(key, String(value));
     }
   }
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/json",
+  };
+  if (json != null) headers["Content-Type"] = "application/json";
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeout);
   let res;
@@ -36,10 +41,8 @@ async function request(token, path, { method = "GET", query = null, fetchImpl = 
       method,
       cache: "no-store",
       signal: ctrl.signal,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-      },
+      headers,
+      body: json != null ? JSON.stringify(json) : undefined,
     });
   } catch {
     throw new TodoistError("Couldn't reach Todoist. Check your connection and try again.");
@@ -83,6 +86,18 @@ export function closeTask(token, id, fetchImpl = fetch) {
 
 export function reopenTask(token, id, fetchImpl = fetch) {
   return request(token, `tasks/${encodeURIComponent(id)}/reopen`, { method: "POST", fetchImpl });
+}
+
+export function updateTask(token, id, fields, fetchImpl = fetch) {
+  return request(token, `tasks/${encodeURIComponent(id)}`, { method: "POST", json: fields, fetchImpl });
+}
+
+export function createTask(token, fields, fetchImpl = fetch) {
+  return request(token, "tasks", { method: "POST", json: fields, fetchImpl });
+}
+
+export function createSection(token, fields, fetchImpl = fetch) {
+  return request(token, "sections", { method: "POST", json: fields, fetchImpl });
 }
 
 export async function loadDashboard(token, fetchImpl = fetch, now = new Date()) {

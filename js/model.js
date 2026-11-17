@@ -154,6 +154,9 @@ export function normalizeTask(raw, sectionName = "") {
   return {
     id: str(raw?.id),
     content: str(raw?.content) || "(no title)",
+    addedAt: str(raw?.added_at),
+    completedCount: Number(raw?.completed_count) || 0,
+    dueString: str(raw?.due?.string),
     meta,
     labels,
     date: due.date,
@@ -482,6 +485,10 @@ export function buildModel({ sections = [], osTasks = [], digestTasks = [], comp
     areas,
     projects,
     digest,
+    reading: {
+      present: present.has("Reading"),
+      ...pickReading(grouped.get("Reading") || [], today),
+    },
     completedCount: [...grouped.values()].flat().filter((task) => task.completed).length + digest.filter((task) => task.completed).length,
     counts: {
       upcomingAssignments: open(assignments).filter((task) => task.date >= today).length,
@@ -489,6 +496,59 @@ export function buildModel({ sections = [], osTasks = [], digestTasks = [], comp
       openTeamItems: teams.reduce((sum, team) => sum + open(team.items).length, 0),
     },
   };
+}
+
+export function readingProgress(chapter, chapters) {
+  const total = Number(chapters);
+  const safeTotal = Number.isFinite(total) && total > 0 ? Math.floor(total) : 0;
+  let current = Number(chapter);
+  if (!Number.isFinite(current) || current < 0) current = 0;
+  current = Math.floor(current);
+  if (safeTotal && current > safeTotal) current = safeTotal;
+  const pct = safeTotal ? Math.round((current / safeTotal) * 100) : 0;
+  return { chapter: current, chapters: safeTotal, pct, finished: safeTotal > 0 && current >= safeTotal };
+}
+
+export function incrementChapter(chapter, chapters) {
+  const now = readingProgress(chapter, chapters);
+  if (!now.chapters || now.finished) return now;
+  return readingProgress(now.chapter + 1, now.chapters);
+}
+
+export function adjustChapter(chapter, chapters, delta) {
+  const now = readingProgress(chapter, chapters);
+  return readingProgress(now.chapter + Number(delta) || 0, now.chapters);
+}
+
+export function parseBookForm(input) {
+  const title = str(input?.title).trim();
+  const author = str(input?.author).trim();
+  if (!title) return { error: "Add a title." };
+  const chapters = Number(input?.chapters);
+  const rawChapter = input?.chapter === "" || input?.chapter == null ? 0 : Number(input.chapter);
+  if (!Number.isInteger(chapters) || chapters < 1) return { error: "Total chapters must be a whole number greater than 0." };
+  if (!Number.isInteger(rawChapter) || rawChapter < 0 || rawChapter > chapters) return { error: "Current chapter must be between 0 and the total." };
+  return { title, author, chapters, chapter: rawChapter };
+}
+
+export function bookDescription({ title, author, chapters, chapter, meta = {} }) {
+  const body = { ...meta, type: "book", title, chapters, chapter };
+  if (author) body.author = author;
+  else delete body.author;
+  return JSON.stringify(body);
+}
+
+export function pickReading(tasks, today) {
+  const open = (tasks || []).filter((task) => task && !task.completed);
+  const books = open.filter((task) => canon(task.meta?.type) === "book");
+  books.sort((a, b) => String(b.addedAt).localeCompare(String(a.addedAt)) || (b.childOrder || 0) - (a.childOrder || 0));
+  const book = books[0] || null;
+  const habits = open.filter((task) => canon(task.meta?.type) === "reading-habit");
+  habits.sort((a, b) => String(a.date || "9999-99-99").localeCompare(String(b.date || "9999-99-99")));
+  const habit = habits[0] || null;
+  const progress = book ? readingProgress(book.meta?.chapter, book.meta?.chapters) : null;
+  const doneToday = !!(habit && habit.date && today && habit.date > today);
+  return { book, habit, progress, doneToday };
 }
 
 export function habitTarget(habits, label) {

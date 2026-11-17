@@ -16,13 +16,19 @@ import {
   zonedMidnightUtc,
 } from "../js/dates.js";
 import {
+  adjustChapter,
   avatarColor,
+  bookDescription,
   buildModel,
   calendarEvents,
   habitTarget,
+  incrementChapter,
   initials,
+  parseBookForm,
   parseMeta,
+  pickReading,
   priorityLabel,
+  readingProgress,
   springWeekEvents,
   springWhen,
 } from "../js/model.js";
@@ -257,6 +263,32 @@ test("buildModel groups sections by name and sorts taskers by due date", () => {
     filter: "school",
   });
   assert.equal(finals.filter((event) => event.title === "Finals week").length, 3);
+});
+
+test("reading progress rounds and caps the chapter", () => {
+  assert.deepEqual(readingProgress(1, 3), { chapter: 1, chapters: 3, pct: 33, finished: false });
+  assert.equal(readingProgress(2, 3).pct, 67);
+  assert.deepEqual(incrementChapter(9, 10), { chapter: 10, chapters: 10, pct: 100, finished: true });
+  assert.deepEqual(incrementChapter(10, 10), { chapter: 10, chapters: 10, pct: 100, finished: true });
+  assert.equal(adjustChapter(0, 10, -1).chapter, 0);
+  assert.equal(adjustChapter(4, 10, 2).chapter, 6);
+  assert.equal(readingProgress(-3, 0).pct, 0);
+  const parsed = parseBookForm({ title: "  Example  ", author: "", chapters: "12", chapter: "" });
+  assert.deepEqual(parsed, { title: "Example", author: "", chapters: 12, chapter: 0 });
+  assert.equal(parseBookForm({ title: "", chapters: "3", chapter: "1" }).error, "Add a title.");
+  const description = bookDescription({ title: "Example", author: "A. Writer", chapters: 12, chapter: 4, meta: { note: "keep" } });
+  assert.equal(description.includes("\n"), false);
+  assert.equal(parseMeta(description).chapter, 4);
+  assert.equal(parseMeta(description).note, "keep");
+  const picked = pickReading([
+    { completed: false, addedAt: "2026-01-01T00:00:00Z", childOrder: 1, meta: { type: "book", title: "Older", chapters: 5, chapter: 1 } },
+    { completed: false, addedAt: "2026-02-01T00:00:00Z", childOrder: 2, meta: { type: "book", title: "Newer", chapters: 8, chapter: 2 } },
+    { completed: true, addedAt: "2026-03-01T00:00:00Z", childOrder: 3, meta: { type: "book", title: "Closed", chapters: 3, chapter: 3 } },
+    { completed: false, addedAt: "2026-01-02T00:00:00Z", date: "2026-11-18", meta: { type: "reading-habit" }, completedCount: 4 },
+  ], "2026-11-17");
+  assert.equal(picked.book.meta.title, "Newer");
+  assert.equal(picked.doneToday, true);
+  assert.equal(picked.progress.pct, 25);
 });
 
 test("api client paginates and closes a task", async () => {

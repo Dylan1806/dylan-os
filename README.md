@@ -10,6 +10,8 @@ This app is not created by, affiliated with, or supported by Todoist.
 2. Paste a Todoist API token from [Todoist → Settings → Integrations → Developer](https://app.todoist.com/app/settings/integrations/developer).
 3. The token stays in this browser only. Sign out removes it.
 
+The Life tab includes a reading card. Adding or editing a book, and checking off a daily read, writes back to Todoist. Nothing about a book is stored in this repo.
+
 ## Develop
 
 Serve this folder with any static server. `node --test` runs the checks.

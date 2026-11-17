@@ -1,6 +1,6 @@
-import { closeTask, loadDashboard, reopenTask, TodoistError } from "./api.js";
-import { analogAngles, chicagoHour, chicagoToday, clockText, mondayOf } from "./dates.js";
-import { buildModel } from "./model.js";
+import { closeTask, createSection, createTask, loadDashboard, reopenTask, TodoistError, updateTask } from "./api.js";
+import { addDays, analogAngles, chicagoHour, chicagoToday, clockText, mondayOf } from "./dates.js";
+import { adjustChapter, bookDescription, buildModel, incrementChapter, parseBookForm, readingProgress } from "./model.js";
 import { renderSettings, renderShell, renderToasts } from "./views.js";
 
 const TOKEN_KEY = "dylan-os.token";
@@ -31,6 +31,10 @@ const state = {
   settingsOpen: false,
   settingsError: "",
   selectedDay: "",
+  readingForm: null,
+  readingError: "",
+  readingBusy: false,
+  readingUndo: null,
 };
 
 const actions = {
@@ -51,6 +55,12 @@ const actions = {
   closeSettings,
   editSettings,
   saveSettings,
+  openReadingForm,
+  closeReadingForm,
+  saveBook,
+  adjustChapter: changeChapter,
+  readToday,
+  undoReading,
 };
 
 function safeHttp(href) {
@@ -234,7 +244,7 @@ function forceAuth(message) {
 
 async function refresh({ silent }) {
   if (!state.token || state.refreshing) return;
-  if (silent && (state.pending.size || state.settingsOpen)) return;
+  if (silent && (state.pending.size || state.settingsOpen || state.readingForm || state.readingBusy || state.readingUndo)) return;
   state.refreshing = true;
   if (!silent) state.banner = "";
   renderShellOnly();
@@ -242,6 +252,9 @@ async function refresh({ silent }) {
     const raw = await loadDashboard(state.token);
     state.pending.clear();
     state.reopened.clear();
+    state.readingUndo = null;
+    state.readingForm = null;
+    state.readingError = "";
     applyRaw(raw);
   } catch (error) {
     state.refreshing = false;
@@ -312,7 +325,265 @@ function complete(task) {
   });
 }
 
+function findOsTask(id) {
+  return (state.raw?.osTasks || []).find((task) => String(task.id) === String(id)) || null;
+}
+
+async function ensureReadingSection() {
+  const found = (state.raw.sections || []).find((section) => section && section.name === "Reading" && !section.is_deleted && !section.is_archived);
+  if (found) return found;
+  if (!state.raw?.os?.id) throw new TodoistError("The dashboard project is not available.");
+  const created = await createSection(state.token, { name: "Reading", project_id: state.raw.os.id });
+  if (!created?.id) throw new TodoistError("Todoist did not create the reading section.");
+  state.raw.sections = [...(state.raw.sections || []), created];
+  return created;
+}
+
+async function ensureReadingHabit(sectionId) {
+  rebuild();
+  const existing = state.model.reading?.habit;
+  if (existing) return findOsTask(existing.id) || existing;
+  const created = await createTask(state.token, {
+    content: "Read a chapter",
+    description: JSON.stringify({ type: "reading-habit" }),
+    project_id: state.raw.os.id,
+    section_id: sectionId,
+    due_string: "every day",
+  });
+  if (!created?.id) throw new TodoistError("Todoist did not create the daily reading task.");
+  state.raw.osTasks = [...(state.raw.osTasks || []), created];
+  rebuild();
+  return created;
+}
+
+function openReadingForm(mode) {
+  state.readingForm = mode === "edit" ? "edit" : "add";
+  state.readingError = "";
+  renderShellOnly();
+}
+
+function closeReadingForm() {
+  state.readingForm = null;
+  state.readingError = "";
+  renderShellOnly();
+}
+
+async function saveBook(input) {
+  const parsed = parseBookForm(input);
+  if (parsed.error) {
+    state.readingError = parsed.error;
+    renderShellOnly();
+    return;
+  }
+  if (state.readingBusy) return;
+  state.readingBusy = true;
+  state.readingError = "";
+  renderShellOnly();
+  const editing = state.readingForm === "edit";
+  const previous = state.model.reading?.book || null;
+  try {
+    const section = await ensureReadingSection();
+    await ensureReadingHabit(section.id);
+    const description = bookDescription({
+      title: parsed.title,
+      author: parsed.author,
+      chapters: parsed.chapters,
+      chapter: parsed.chapter,
+      meta: editing && previous ? previous.meta : { type: "book" },
+    });
+    if (editing && previous) {
+      await updateTask(state.token, previous.id, { content: parsed.title, description });
+      const local = findOsTask(previous.id);
+      if (local) {
+        local.content = parsed.title;
+        local.description = description;
+      }
+    } else {
+      const created = await createTask(state.token, {
+        content: parsed.title,
+        description,
+        project_id: state.raw.os.id,
+        section_id: section.id,
+      });
+      if (!created?.id) throw new TodoistError("Todoist did not save the book.");
+      state.raw.osTasks = [...(state.raw.osTasks || []), created];
+      if (previous) {
+        try {
+          await closeTask(state.token, previous.id);
+          state.raw.osTasks = state.raw.osTasks.filter((task) => String(task.id) !== String(previous.id));
+        } catch (error) {
+          if (error instanceof TodoistError && error.auth) throw error;
+          state.banner = "The new book was saved, but the previous book could not be closed.";
+        }
+      }
+    }
+    state.readingForm = null;
+    state.readingBusy = false;
+    rebuild();
+    render();
+  } catch (error) {
+    state.readingBusy = false;
+    if (error instanceof TodoistError && error.auth) {
+      forceAuth(error.message);
+      return;
+    }
+    state.readingError = error instanceof TodoistError ? error.message : "Could not save the book.";
+    render();
+  }
+}
+
+async function changeChapter(delta) {
+  const book = state.model.reading?.book;
+  if (!book || state.readingBusy) return;
+  const next = adjustChapter(book.meta.chapter, book.meta.chapters, delta);
+  const now = readingProgress(book.meta.chapter, book.meta.chapters);
+  if (next.chapter === now.chapter) return;
+  const local = findOsTask(book.id);
+  if (!local) return;
+  const previous = local.description;
+  const description = bookDescription({
+    title: book.meta.title || book.content,
+    author: book.meta.author,
+    chapters: next.chapters,
+    chapter: next.chapter,
+    meta: book.meta,
+  });
+  local.description = description;
+  rebuild();
+  renderShellOnly();
+  try {
+    await updateTask(state.token, book.id, { description });
+  } catch (error) {
+    local.description = previous;
+    rebuild();
+    if (error instanceof TodoistError && error.auth) {
+      forceAuth(error.message);
+      return;
+    }
+    state.banner = "Could not update the chapter.";
+    render();
+  }
+}
+
+async function readToday() {
+  const book = state.model.reading?.book;
+  if (!book || state.readingBusy || state.readingUndo || state.model.reading?.doneToday) return;
+  state.readingBusy = true;
+  renderShellOnly();
+  const localBook = findOsTask(book.id);
+  const beforeDesc = localBook?.description || "";
+  try {
+    const section = await ensureReadingSection();
+    const habit = await ensureReadingHabit(section.id);
+    const beforeDue = habit.due ? JSON.parse(JSON.stringify(habit.due)) : null;
+    const next = incrementChapter(book.meta.chapter, book.meta.chapters);
+    const description = bookDescription({
+      title: book.meta.title || book.content,
+      author: book.meta.author,
+      chapters: next.chapters,
+      chapter: next.chapter,
+      meta: book.meta,
+    });
+    if (localBook && next.chapter !== readingProgress(book.meta.chapter, book.meta.chapters).chapter) localBook.description = description;
+    habit.due = { ...(habit.due || {}), date: addDays(state.model.today, 1), string: habit.due?.string || "every day", is_recurring: true };
+    state.readingUndo = {
+      bookId: String(book.id),
+      habitId: String(habit.id),
+      beforeDesc,
+      nextDesc: localBook?.description || description,
+      beforeDue,
+      closed: false,
+      updated: false,
+    };
+    state.readingBusy = false;
+    rebuild();
+    pushToast({ id: "reading", content: "Read a chapter", reading: true });
+    renderShellOnly();
+    await closeTask(state.token, habit.id);
+    state.readingUndo.closed = true;
+    if (localBook && localBook.description !== beforeDesc) {
+      await updateTask(state.token, book.id, { description: localBook.description });
+      state.readingUndo.updated = true;
+    }
+  } catch (error) {
+    state.readingBusy = false;
+    if (error instanceof TodoistError && error.auth) {
+      forceAuth(error.message);
+      return;
+    }
+    const message = error instanceof TodoistError ? error.message : "Could not record today's reading.";
+    if (state.readingUndo) await undoReading(message);
+    else {
+      state.banner = message;
+      render();
+    }
+  }
+}
+
+async function undoReading(failure) {
+  const undo = state.readingUndo;
+  removeToast("reading");
+  if (!undo) {
+    const book = state.model.reading?.book;
+    const habit = state.model.reading?.habit;
+    if (!book || !state.model.reading?.doneToday) return;
+    const next = adjustChapter(book.meta.chapter, book.meta.chapters, -1);
+    const description = bookDescription({
+      title: book.meta.title || book.content,
+      author: book.meta.author,
+      chapters: next.chapters,
+      chapter: next.chapter,
+      meta: book.meta,
+    });
+    const local = findOsTask(book.id);
+    if (local) local.description = description;
+    const habitRaw = habit ? findOsTask(habit.id) : null;
+    if (habitRaw) habitRaw.due = { ...(habitRaw.due || {}), date: state.model.today, string: habit.dueString || "every day" };
+    rebuild();
+    renderShellOnly();
+    try {
+      await updateTask(state.token, book.id, { description });
+      if (habit) await updateTask(state.token, habit.id, { due_string: habit.dueString || "every day" });
+    } catch (error) {
+      if (error instanceof TodoistError && error.auth) {
+        forceAuth(error.message);
+        return;
+      }
+      state.banner = "Could not undo today's reading. Refresh to see the current list.";
+      render();
+    }
+    return;
+  }
+  const book = findOsTask(undo.bookId);
+  const habit = findOsTask(undo.habitId);
+  if (book) book.description = undo.beforeDesc;
+  if (habit) habit.due = undo.beforeDue;
+  state.readingUndo = null;
+  rebuild();
+  renderShellOnly();
+  try {
+    if (undo.updated) await updateTask(state.token, undo.bookId, { description: undo.beforeDesc });
+    if (undo.closed) {
+      await reopenTask(state.token, undo.habitId).catch(() => {});
+      await updateTask(state.token, undo.habitId, { due_string: undo.beforeDue?.string || "every day" });
+    }
+    if (failure) state.banner = failure;
+    if (failure) render();
+  } catch (error) {
+    if (error instanceof TodoistError && error.auth) {
+      forceAuth(error.message);
+      return;
+    }
+    state.banner = "Could not undo today's reading. Refresh to see the current list.";
+    render();
+  }
+}
+
 function reopen(task) {
+  if (task?.reading || task?.id === "reading") {
+    undoReading();
+    return;
+  }
   const entry = state.pending.get(task.id);
   if (entry) {
     entry.cancelled = true;

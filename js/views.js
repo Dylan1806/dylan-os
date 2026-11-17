@@ -5,6 +5,7 @@ import {
   courseColor,
   habitTarget,
   initials,
+  readingProgress,
   meetingKind,
   sameCourse,
   shortName,
@@ -782,6 +783,78 @@ function rotc(state, actions) {
   );
 }
 
+function readingCard(state, actions) {
+  const reading = state.model.reading || {};
+  const book = reading.book;
+  const progress = book ? readingProgress(book.meta.chapter, book.meta.chapters) : null;
+  const done = !!(reading.doneToday || state.readingUndo);
+  const logged = (reading.habit?.completedCount || 0) + (state.readingUndo ? 1 : 0);
+  return h("div", null,
+    bar("📖", "Reading", MAROON),
+    card([
+      book ? h("div", { class: "title-500" }, book.meta.title || book.content) : h("p", { class: "sub" }, "Add a book. It is stored in Todoist, not in this site."),
+      book && book.meta.author ? h("div", { class: "sub mb6" }, book.meta.author) : null,
+      progress ? prog(progress.chapter, progress.chapters, "#5aa7e8") : null,
+      progress ? h("div", { class: "reading-line" },
+        h("span", null, progress.finished ? "Finished" : `Chapter ${progress.chapter} of ${progress.chapters}`),
+        done ? pill("success", "Done today") : null,
+      ) : null,
+      logged > 0 ? h("div", { class: "sub" }, `Logged ${logged} time${logged === 1 ? "" : "s"}`) : null,
+      book ? h("div", { class: "task-row" },
+        h("button", {
+          type: "button",
+          class: "box",
+          role: "checkbox",
+          "aria-checked": done ? "true" : "false",
+          "aria-label": "Read a chapter today",
+          disabled: state.readingBusy,
+          onclick: () => (done ? actions.undoReading() : actions.readToday()),
+        }, h("span", { class: done ? "box-inner is-on" : "box-inner" }, done ? "✓" : "")),
+        h("span", null, "Read a chapter today"),
+        h("span", { class: "reading-actions" },
+          h("button", { type: "button", class: "icon-btn", "aria-label": "Decrease chapter", disabled: state.readingBusy || progress.chapter <= 0, onclick: () => actions.adjustChapter(-1) }, "−"),
+          h("button", { type: "button", class: "icon-btn", "aria-label": "Increase chapter", disabled: state.readingBusy || progress.finished, onclick: () => actions.adjustChapter(1) }, "+"),
+        ),
+      ) : null,
+      state.readingForm ? readingForm(state, actions, book) : h("div", { class: "reading-actions" },
+        h("button", { type: "button", class: "ghost", onclick: () => actions.openReadingForm("add") }, book ? "Change book" : "Add book"),
+        book ? h("button", { type: "button", class: "ghost", onclick: () => actions.openReadingForm("edit") }, "Edit") : null,
+      ),
+      state.readingError ? h("div", { class: "alert mt8", role: "alert" }, state.readingError) : null,
+    ]),
+  );
+}
+
+function readingForm(state, actions, book) {
+  const editing = state.readingForm === "edit" && book;
+  const progress = editing ? readingProgress(book.meta.chapter, book.meta.chapters) : null;
+  return h("form", {
+    class: "reading-form",
+    onsubmit: (event) => {
+      event.preventDefault();
+      actions.saveBook(Object.fromEntries(new FormData(event.target)));
+    },
+  },
+    h("div", { class: "title-500 mb6" }, editing ? "Edit book" : (book ? "Change book" : "Add book")),
+    h("label", { class: "field" }, "Title",
+      h("input", { name: "title", required: true, value: editing ? (book.meta.title || book.content) : "", autocomplete: "off" }),
+    ),
+    h("label", { class: "field" }, "Author (optional)",
+      h("input", { name: "author", value: editing ? (book.meta.author || "") : "", autocomplete: "off" }),
+    ),
+    h("label", { class: "field" }, "Total chapters",
+      h("input", { name: "chapters", type: "number", min: "1", step: "1", required: true, inputmode: "numeric", value: editing ? String(progress.chapters || "") : "" }),
+    ),
+    h("label", { class: "field" }, "Current chapter",
+      h("input", { name: "chapter", type: "number", min: "0", step: "1", inputmode: "numeric", value: editing ? String(progress.chapter) : "0" }),
+    ),
+    h("div", { class: "reading-actions" },
+      h("button", { class: "primary", type: "submit", disabled: state.readingBusy }, state.readingBusy ? "Saving…" : "Save"),
+      h("button", { class: "ghost", type: "button", onclick: actions.closeReadingForm }, "Cancel"),
+    ),
+  );
+}
+
 function life(state, actions) {
   const { model } = state;
   const days = [0, 1, 2, 3, 4, 5, 6].map((offset) => addDays(model.weekStart, offset));
@@ -793,6 +866,7 @@ function life(state, actions) {
   const weeks = [0, 1, 2, 3, 4].map((step) => addDays(model.weekStart, step * 7));
   const monthGoals = shown(state, model.goals.filter((task) => task.horizon === "month"));
   return h("div", { class: "stack" },
+    readingCard(state, actions),
     h("div", { class: "row" },
       col(1, 260,
         h("div", null,

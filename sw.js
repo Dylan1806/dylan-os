@@ -1,4 +1,4 @@
-const CACHE = "dylan-os-shell-v2";
+const CACHE = "dylan-os-shell-v3";
 const ASSETS = [
   "./",
   "./index.html",
