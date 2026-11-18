@@ -19,23 +19,25 @@ test("spotify links become embed ids", () => {
   assert.match(embedSrc({ type: "playlist", id: "abc" }), /^https:\/\/open\.spotify\.com\/embed\/playlist\/abc\?/);
 });
 
-test("check ding stays audible past two seconds at the original pitch", () => {
+test("check ding rings for 1.75s at the original pitch", () => {
   assert.equal(DING.attack, 0.005);
-  assert.equal(DING.decay, 2.7);
-  assert.ok(DING.stop >= 2.8);
+  assert.equal(DING.decay, 1.75);
+  assert.ok(DING.stop >= 1.8 && DING.stop <= 1.85);
   assert.equal(DING.maxVoices, 1);
   assert.ok(DING.volume <= 0.25);
   assert.deepEqual(DING.partials.map((partial) => partial.freq), [1328, 2662, 1675, 1990, 3653]);
   assert.deepEqual(DING.partials.map((partial) => partial.gain), [1, 0.42, 0.34, 0.14, 0.08]);
-  assert.equal(DING.partials[0].tail, 2.7);
-  assert.ok(Math.max(...DING.partials.slice(1).map((partial) => partial.tail)) < 2.7);
+  assert.equal(DING.partials[0].tail, 1.75);
+  assert.ok(Math.max(...DING.partials.slice(1).map((partial) => partial.tail)) < 1.75);
   const db = (time) => 20 * Math.log10(envelopeGain(time));
   assert.ok(Math.abs(db(0.005)) < 0.2);
-  assert.ok(Math.abs(db(0.3) - -6) < 0.4);
-  assert.ok(Math.abs(db(1) - -12) < 0.4);
-  assert.ok(Math.abs(db(1.8) - -20) < 0.4);
-  assert.ok(Math.abs(db(2.4) - -30) < 0.4);
-  assert.ok(audibleUntil() >= 2.2);
+  assert.ok(Math.abs(db(0.2) - -6) < 0.4);
+  assert.ok(Math.abs(db(0.65) - -12) < 0.4);
+  assert.ok(Math.abs(db(1.17) - -20) < 0.4);
+  assert.ok(Math.abs(db(1.55) - -30) < 0.4);
+  assert.ok(db(1.75) < -60);
+  const until = audibleUntil();
+  assert.ok(until >= 1.45 && until <= 1.75);
   assert.equal(soundEnabled(null), true);
   assert.equal(soundEnabled("1"), true);
   assert.equal(soundEnabled("0"), false);

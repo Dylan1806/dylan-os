@@ -1,30 +1,31 @@
 // Synthesized check chime at the original pitch (~1328 Hz plus weaker partials).
-// The fundamental stays audible until about 2.7s. A new check ducks the previous one.
+// The long ring is scaled to 1.75s. A new check ducks the previous one.
 
 export const DING = {
   attack: 0.005,
-  decay: 2.7,
-  stop: 2.8,
+  decay: 1.75,
+  stop: 1.8,
   volume: 0.16,
   maxVoices: 1,
   partials: [
-    { freq: 1328, gain: 1, tail: 2.7 },
-    { freq: 2662, gain: 0.42, tail: 1.5 },
-    { freq: 1675, gain: 0.34, tail: 1.9 },
-    { freq: 1990, gain: 0.14, tail: 1.25 },
-    { freq: 3653, gain: 0.08, tail: 0.9 },
+    { freq: 1328, gain: 1, tail: 1.75 },
+    { freq: 2662, gain: 0.42, tail: 0.97 },
+    { freq: 1675, gain: 0.34, tail: 1.23 },
+    { freq: 1990, gain: 0.14, tail: 0.81 },
+    { freq: 3653, gain: 0.08, tail: 0.58 },
   ],
 };
 
 // Fundamental level relative to the peak, matched with exponential segments.
+// Times are the 2.7s ring scaled by 1.75/2.7.
 export const ENVELOPE = [
   [0, 0.0001],
   [0.005, 1],
-  [0.3, 10 ** (-6 / 20)],
-  [1, 10 ** (-12 / 20)],
-  [1.8, 10 ** (-20 / 20)],
-  [2.4, 10 ** (-30 / 20)],
-  [2.7, 0.0001],
+  [0.2, 10 ** (-6 / 20)],
+  [0.65, 10 ** (-12 / 20)],
+  [1.17, 10 ** (-20 / 20)],
+  [1.55, 10 ** (-30 / 20)],
+  [1.75, 0.0001],
 ];
 
 export function soundEnabled(stored) {
