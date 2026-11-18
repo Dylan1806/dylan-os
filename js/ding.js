@@ -1,4 +1,4 @@
-// Synthesized check chime. Pitch stays a fourth above the recording.
+// Synthesized check chime at the original pitch (~1328 Hz plus weaker partials).
 // The fundamental stays audible until about 2.7s. A new check ducks the previous one.
 
 export const DING = {
@@ -8,11 +8,11 @@ export const DING = {
   volume: 0.16,
   maxVoices: 1,
   partials: [
-    { freq: 1770, gain: 1, tail: 2.7 },
-    { freq: 3540, gain: 0.38, tail: 1.5 },
-    { freq: 2230, gain: 0.32, tail: 1.9 },
-    { freq: 2650, gain: 0.12, tail: 1.25 },
-    { freq: 4860, gain: 0.06, tail: 0.9 },
+    { freq: 1328, gain: 1, tail: 2.7 },
+    { freq: 2662, gain: 0.42, tail: 1.5 },
+    { freq: 1675, gain: 0.34, tail: 1.9 },
+    { freq: 1990, gain: 0.14, tail: 1.25 },
+    { freq: 3653, gain: 0.08, tail: 0.9 },
   ],
 };
 
