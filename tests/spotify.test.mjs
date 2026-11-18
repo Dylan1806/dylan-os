@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sidebarClockParts } from "../js/dates.js";
+import { DING, soundEnabled } from "../js/ding.js";
 import { codeChallenge, embedSrc, parseSpotifyLink, premiumRequired } from "../js/spotify.js";
 
 test("sidebar clock uses 24-hour time and a short date", () => {
@@ -16,6 +17,17 @@ test("spotify links become embed ids", () => {
   assert.deepEqual(parseSpotifyLink("spotify:track:4iV5W9uYEdYUVa79Axb7Rh"), { type: "track", id: "4iV5W9uYEdYUVa79Axb7Rh" });
   assert.equal(parseSpotifyLink("https://example.com/playlist/abc"), null);
   assert.match(embedSrc({ type: "playlist", id: "abc" }), /^https:\/\/open\.spotify\.com\/embed\/playlist\/abc\?/);
+});
+
+test("check ding is one short bell, on unless turned off", () => {
+  assert.equal(DING.attack, 0.005);
+  assert.ok(DING.decay >= 0.4 && DING.decay <= 0.5);
+  assert.ok(DING.volume <= 0.25);
+  assert.deepEqual(DING.partials.map((partial) => partial.freq), [1328, 2662, 1675, 1990, 3653]);
+  assert.equal(DING.partials[0].gain, 1);
+  assert.equal(soundEnabled(null), true);
+  assert.equal(soundEnabled("1"), true);
+  assert.equal(soundEnabled("0"), false);
 });
 
 test("pkce challenge matches the RFC 7636 sample", async () => {

@@ -12,11 +12,13 @@ import {
   spotifyFetch,
   tokenBody,
 } from "./spotify.js";
+import { playCheckDing, soundEnabled } from "./ding.js";
 import { renderSettings, renderShell, renderToasts } from "./views.js";
 
 const TOKEN_KEY = "dylan-os.token";
 const SETTINGS_KEY = "dylan-os.settings";
 const CACHE_KEY = "dylan-os.cache";
+const SOUND_KEY = "dylan-os.sound";
 
 const state = {
   token: "",
@@ -39,6 +41,7 @@ const state = {
   reopened: new Set(),
   toasts: [],
   settings: { personal: [], links: [] },
+  soundOn: true,
   settingsOpen: false,
   settingsError: "",
   selectedDay: "",
@@ -78,6 +81,7 @@ const actions = {
   closeSettings,
   editSettings,
   saveSettings,
+  setSound,
   openReadingForm,
   closeReadingForm,
   saveBook,
@@ -330,8 +334,19 @@ function pushToast(task) {
   renderToastBox();
 }
 
+function checkSoundOn() {
+  return soundEnabled(localStorage.getItem(SOUND_KEY));
+}
+
+function setSound(on) {
+  state.soundOn = !!on;
+  localStorage.setItem(SOUND_KEY, on ? "1" : "0");
+  renderModal();
+}
+
 function complete(task) {
   if (!task?.id || state.pending.has(task.id) || task.completed) return;
+  playCheckDing(state.soundOn);
   const entry = { phase: "checking", cancelled: false, closed: false };
   state.pending.set(task.id, entry);
   renderShellOnly();
@@ -500,6 +515,7 @@ async function changeChapter(delta) {
 async function readToday() {
   const book = state.model.reading?.book;
   if (!book || state.readingBusy || state.readingUndo || state.model.reading?.doneToday) return;
+  playCheckDing(state.soundOn);
   state.readingBusy = true;
   renderShellOnly();
   const localBook = findOsTask(book.id);
@@ -957,6 +973,7 @@ function spotifyTransfer(deviceId) {
 }
 
 function boot() {
+  state.soundOn = checkSoundOn();
   loadSpotifyStore();
   if (state.spotify.connected) loadSpotifyPlayer(true).catch(() => {});
   consumeSpotifyRedirect();

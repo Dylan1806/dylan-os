@@ -1096,6 +1096,12 @@ export function renderSettings(state, actions) {
     },
       h("h2", null, "On this device"),
       h("p", { class: "sub" }, "Personal rows and links stay in this browser. They are not written to Todoist or the public site."),
+      h("button", {
+        type: "button",
+        class: "toggle mb8",
+        "aria-pressed": state.soundOn ? "true" : "false",
+        onclick: () => actions.setSound(!state.soundOn),
+      }, h("span", { class: "switch" }), "Sound on check"),
       h("div", { class: "title-500 mb6 mt8" }, "Personal"),
       ...personal.map((row, index) => h("div", { class: "setting-row" },
         h("input", { name: "plabel", value: row.label, placeholder: "Label", "aria-label": "Label" }),
