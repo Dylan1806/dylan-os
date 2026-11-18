@@ -31,8 +31,8 @@ export function embedSrc(item) {
   return `https://open.spotify.com/embed/${item.type}/${item.id}?utm_source=generator&theme=0`;
 }
 
-export function embedHeight(item) {
-  return item?.type === "track" || item?.type === "episode" ? 152 : 352;
+export function embedHeight() {
+  return 352;
 }
 
 function base64url(bytes) {

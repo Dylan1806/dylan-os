@@ -56,7 +56,7 @@ const state = {
     connected: false,
     settings: false,
     player: null,
-    playlists: [],
+    editing: false,
     devices: [],
     note: "",
     premium: true,
@@ -94,8 +94,8 @@ const actions = {
   connectSpotify,
   disconnectSpotify,
   toggleSpotifySettings,
+  toggleSpotifyEdit,
   spotifyControl,
-  spotifyPlay,
   spotifyTransfer,
 };
 
@@ -762,13 +762,21 @@ function saveSpotifyEmbed(value) {
   }
   state.spotify.embed = parsed;
   state.spotify.embedError = "";
+  state.spotify.editing = false;
   localStorage.setItem(SPOTIFY_KEYS.embed, JSON.stringify(parsed));
   renderShellOnly();
 }
 
 function clearSpotifyEmbed() {
   state.spotify.embed = null;
+  state.spotify.editing = false;
   localStorage.removeItem(SPOTIFY_KEYS.embed);
+  renderShellOnly();
+}
+
+function toggleSpotifyEdit() {
+  state.spotify.editing = !state.spotify.editing;
+  state.spotify.embedError = "";
   renderShellOnly();
 }
 
@@ -791,7 +799,7 @@ function disconnectSpotify() {
   state.spotify.tokens = null;
   state.spotify.connected = false;
   state.spotify.player = null;
-  state.spotify.playlists = [];
+  state.spotify.editing = false;
   state.spotify.devices = [];
   state.spotify.note = "";
   renderShellOnly();
@@ -870,7 +878,8 @@ async function consumeSpotifyRedirect() {
 
 function shapePlayer(body) {
   if (!body || !body.item) return { is_playing: !!body?.is_playing, progress_ms: body?.progress_ms || 0, item: null, device: body?.device || null, fetchedAt: Date.now() };
-  const images = body.item.album?.images || body.item.images || [];
+  const images = (body.item.album?.images || body.item.images || []).filter((img) => img?.url);
+  const cover = images.reduce((best, img) => (!best || (img.width || 0) > (best.width || 0) ? img : best), null);
   return {
     is_playing: !!body.is_playing,
     progress_ms: body.progress_ms || 0,
@@ -880,7 +889,7 @@ function shapePlayer(body) {
       name: body.item.name || "",
       artists: (body.item.artists || []).map((artist) => artist.name).filter(Boolean).join(", "),
       duration_ms: body.item.duration_ms || 0,
-      image: images[images.length - 1]?.url || images[0]?.url || "",
+      image: cover?.url || "",
     },
   };
 }
@@ -898,14 +907,8 @@ async function loadSpotifyPlayer(full) {
   const noteBefore = state.spotify.note;
   if (player.status === 204 || player.status === 200) {
     state.spotify.player = player.status === 204 ? null : shapePlayer(player.body);
-    if (player.status === 204) state.spotify.note = "Nothing is playing. Open Spotify on a device, or start a playlist below.";
+    if (player.status === 204) state.spotify.note = "Nothing is playing. Open Spotify on a device, or press play in the embed.";
     else if (!state.spotify.note?.includes("Premium")) state.spotify.note = "";
-  }
-  if (full || !(state.spotify.playlists || []).length) {
-    const lists = await spotifyFetch(access, "/me/playlists?limit=50");
-    if (lists.status === 200) {
-      state.spotify.playlists = (lists.body?.items || []).map((item) => ({ name: item.name, uri: item.uri, id: item.id })).filter((item) => item.uri);
-    }
   }
   const live = document.querySelector("[data-spotify-live]");
   if (live && !full && state.spotify.note === noteBefore) paintSpotifyLive();
@@ -923,7 +926,11 @@ function paintSpotifyLive() {
   const artist = document.querySelector("[data-np=artist]");
   if (artist) artist.textContent = item?.artists || "";
   const image = document.querySelector("[data-np=art]");
-  if (image && item?.image) image.src = item.image;
+  if (!!image !== !!item?.image) {
+    renderShellOnly();
+    return;
+  }
+  if (image && item?.image && image.getAttribute("src") !== item.image) image.src = item.image;
   const toggle = document.querySelector("[data-np=toggle]");
   if (toggle) {
     const playing = !!state.spotify.player?.is_playing;
@@ -962,10 +969,6 @@ function spotifyControl(action) {
   if (action === "previous") return spotifyCommand("/me/player/previous", { method: "POST" });
   if (action === "pause") return spotifyCommand("/me/player/pause", { method: "PUT" });
   return spotifyCommand("/me/player/play", { method: "PUT" });
-}
-
-function spotifyPlay(uri) {
-  return spotifyCommand("/me/player/play", { method: "PUT", json: { context_uri: uri } });
 }
 
 function spotifyTransfer(deviceId) {

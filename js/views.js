@@ -265,8 +265,8 @@ function spotifyLive(state, actions) {
   const progress = duration ? Math.min(100, Math.round(((player.progress_ms || 0) / duration) * 100)) : 0;
   return h("div", { "data-spotify-live": "1" },
     spotify.connected ? h("div", { class: "np" },
-      item?.image ? h("img", { src: item.image, alt: "", "data-np": "art" }) : null,
-      h("div", { style: { flex: "1", minWidth: "0" } },
+      item?.image ? h("img", { class: "np-art", src: item.image, alt: "", "data-np": "art" }) : null,
+      h("div", { class: "np-copy" },
         h("div", { class: "np-title", "data-np": "title" }, item?.name || "Nothing playing"),
         h("div", { class: "sub", "data-np": "artist" }, item?.artists || ""),
         duration ? h("div", { class: "prog", style: { marginTop: "6px" } },
@@ -287,15 +287,26 @@ function spotifyLive(state, actions) {
   );
 }
 
+function playlistForm(actions) {
+  return h("form", {
+    onsubmit: (event) => {
+      event.preventDefault();
+      actions.saveSpotifyEmbed(new FormData(event.target).get("link"));
+    },
+  },
+    h("label", { class: "field" }, "Playlist, album, or track link",
+      h("input", { name: "link", placeholder: "https://open.spotify.com/playlist/…", autocomplete: "off" }),
+    ),
+    h("button", { class: "primary", type: "submit" }, "Set playlist"),
+  );
+}
+
 function spotifyCard(state, actions) {
   const spotify = state.spotify || {};
   const embed = spotify.embed;
+  const showForm = !embed || spotify.editing;
   return h("div", { class: "spotify-card" },
     spotifyLive(state, actions),
-    (spotify.playlists || []).length ? h("div", { class: "spotify-list" }, spotify.playlists.map((list) => h("button", {
-      type: "button",
-      onclick: () => actions.spotifyPlay(list.uri),
-    }, list.name))) : null,
     embed ? h("iframe", {
       title: "Spotify",
       src: embedSrc(embed),
@@ -303,23 +314,15 @@ function spotifyCard(state, actions) {
       allow: "autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture",
       loading: "lazy",
       style: { marginTop: "10px" },
-    }) : h("form", {
-      onsubmit: (event) => {
-        event.preventDefault();
-        actions.saveSpotifyEmbed(new FormData(event.target).get("link"));
-      },
-    },
-      h("label", { class: "field" }, "Playlist, album, or track link",
-        h("input", { name: "link", placeholder: "https://open.spotify.com/playlist/…", autocomplete: "off" }),
-      ),
-      h("button", { class: "primary", type: "submit" }, "Set playlist"),
-    ),
+    }) : null,
+    showForm ? playlistForm(actions) : null,
     spotify.embedError ? h("p", { class: "alert", role: "alert" }, spotify.embedError) : null,
     h("div", { class: "reading-actions", style: { marginTop: "8px" } },
       spotify.connected
         ? h("button", { type: "button", class: "ghost", onclick: actions.disconnectSpotify }, "Disconnect")
         : h("button", { type: "button", class: "ghost", onclick: actions.connectSpotify }, "Connect Spotify"),
       h("button", { type: "button", class: "ghost", onclick: actions.toggleSpotifySettings }, "Settings"),
+      embed ? h("button", { type: "button", class: "ghost", onclick: actions.toggleSpotifyEdit }, spotify.editing ? "Cancel" : "Change playlist") : null,
       embed ? h("button", { type: "button", class: "ghost", onclick: actions.clearSpotifyEmbed }, "Remove embed") : null,
     ),
     spotify.settings ? h("div", { class: "spotify-help" },

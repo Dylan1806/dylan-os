@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { sidebarClockParts } from "../js/dates.js";
 import { audibleUntil, DING, envelopeGain, soundEnabled } from "../js/ding.js";
-import { codeChallenge, embedSrc, parseSpotifyLink, premiumRequired } from "../js/spotify.js";
+import { codeChallenge, embedHeight, embedSrc, parseSpotifyLink, premiumRequired } from "../js/spotify.js";
 
 test("sidebar clock uses 24-hour time and a short date", () => {
   const date = new Date(2026, 8, 27, 21, 16, 14);
@@ -17,6 +17,9 @@ test("spotify links become embed ids", () => {
   assert.deepEqual(parseSpotifyLink("spotify:track:4iV5W9uYEdYUVa79Axb7Rh"), { type: "track", id: "4iV5W9uYEdYUVa79Axb7Rh" });
   assert.equal(parseSpotifyLink("https://example.com/playlist/abc"), null);
   assert.match(embedSrc({ type: "playlist", id: "abc" }), /^https:\/\/open\.spotify\.com\/embed\/playlist\/abc\?/);
+  assert.equal(embedHeight({ type: "playlist", id: "abc" }), 352);
+  assert.equal(embedHeight({ type: "album", id: "abc" }), 352);
+  assert.equal(embedHeight({ type: "track", id: "abc" }), 352);
 });
 
 test("check ding rings for 1.75s at the original pitch", () => {
