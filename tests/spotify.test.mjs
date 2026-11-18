@@ -19,12 +19,15 @@ test("spotify links become embed ids", () => {
   assert.match(embedSrc({ type: "playlist", id: "abc" }), /^https:\/\/open\.spotify\.com\/embed\/playlist\/abc\?/);
 });
 
-test("check ding is one short bell, on unless turned off", () => {
+test("check ding is a higher one-second bell, on unless turned off", () => {
   assert.equal(DING.attack, 0.005);
-  assert.ok(DING.decay >= 0.4 && DING.decay <= 0.5);
+  assert.ok(DING.decay >= 1);
+  assert.ok(DING.stop >= 1);
   assert.ok(DING.volume <= 0.25);
-  assert.deepEqual(DING.partials.map((partial) => partial.freq), [1328, 2662, 1675, 1990, 3653]);
+  assert.deepEqual(DING.partials.map((partial) => partial.freq), [1770, 3540, 2230, 2650, 4860]);
   assert.equal(DING.partials[0].gain, 1);
+  assert.equal(DING.partials[0].tail, 1);
+  assert.ok(Math.max(...DING.partials.slice(1).map((partial) => partial.tail)) < 1);
   assert.equal(soundEnabled(null), true);
   assert.equal(soundEnabled("1"), true);
   assert.equal(soundEnabled("0"), false);

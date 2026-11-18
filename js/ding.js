@@ -1,16 +1,17 @@
-// Synthesized check chime. Tuned against a phone recording of a short bell,
-// which was a single note (not a two-note figure): ~1328 Hz plus weaker partials.
+// Synthesized check chime. One bell note, pitched a fourth above the recording
+// and given the recording's long ring: a quick drop, then a tail to about 1s.
 
 export const DING = {
   attack: 0.005,
-  decay: 0.45,
-  volume: 0.2,
+  decay: 1,
+  stop: 1.05,
+  volume: 0.16,
   partials: [
-    { freq: 1328, gain: 1 },
-    { freq: 2662, gain: 0.42 },
-    { freq: 1675, gain: 0.34 },
-    { freq: 1990, gain: 0.14 },
-    { freq: 3653, gain: 0.08 },
+    { freq: 1770, gain: 1, tail: 1 },
+    { freq: 3540, gain: 0.38, tail: 0.55 },
+    { freq: 2230, gain: 0.32, tail: 0.72 },
+    { freq: 2650, gain: 0.12, tail: 0.48 },
+    { freq: 4860, gain: 0.06, tail: 0.36 },
   ],
 };
 
@@ -28,6 +29,16 @@ function audioContext() {
   return context;
 }
 
+function scheduleRing(gain, peak, now, tail) {
+  const floor = 0.0001;
+  const dropped = Math.max(floor, peak * 0.355);
+  gain.setValueAtTime(floor, now);
+  gain.exponentialRampToValueAtTime(Math.max(floor, peak), now + DING.attack);
+  gain.exponentialRampToValueAtTime(dropped, now + 0.1);
+  if (tail > 0.55) gain.exponentialRampToValueAtTime(Math.max(floor, peak * 0.079), now + Math.min(0.5, tail - 0.05));
+  gain.exponentialRampToValueAtTime(floor, now + tail);
+}
+
 export function playCheckDing(enabled = true) {
   if (!enabled) return false;
   const ctx = audioContext();
@@ -41,13 +52,11 @@ export function playCheckDing(enabled = true) {
     const gain = ctx.createGain();
     osc.type = "sine";
     osc.frequency.setValueAtTime(partial.freq, now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(partial.gain, now + DING.attack);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + DING.decay);
+    scheduleRing(gain.gain, partial.gain, now, partial.tail);
     osc.connect(gain);
     gain.connect(master);
     osc.start(now);
-    osc.stop(now + DING.decay + 0.05);
+    osc.stop(now + DING.stop);
   }
   return true;
 }
