@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sidebarClockParts } from "../js/dates.js";
-import { DING, soundEnabled } from "../js/ding.js";
+import { audibleUntil, DING, envelopeGain, soundEnabled } from "../js/ding.js";
 import { codeChallenge, embedSrc, parseSpotifyLink, premiumRequired } from "../js/spotify.js";
 
 test("sidebar clock uses 24-hour time and a short date", () => {
@@ -19,16 +19,22 @@ test("spotify links become embed ids", () => {
   assert.match(embedSrc({ type: "playlist", id: "abc" }), /^https:\/\/open\.spotify\.com\/embed\/playlist\/abc\?/);
 });
 
-test("check ding rings about 2.25s at the same higher pitch", () => {
+test("check ding stays audible past two seconds at the same pitch", () => {
   assert.equal(DING.attack, 0.005);
-  assert.ok(DING.decay >= 2.2 && DING.decay <= 2.4);
-  assert.ok(DING.stop >= 2.3);
+  assert.equal(DING.decay, 2.7);
+  assert.ok(DING.stop >= 2.8);
   assert.equal(DING.maxVoices, 1);
   assert.ok(DING.volume <= 0.25);
   assert.deepEqual(DING.partials.map((partial) => partial.freq), [1770, 3540, 2230, 2650, 4860]);
-  assert.equal(DING.partials[0].gain, 1);
-  assert.equal(DING.partials[0].tail, 2.25);
-  assert.ok(Math.max(...DING.partials.slice(1).map((partial) => partial.tail)) < 2.25);
+  assert.equal(DING.partials[0].tail, 2.7);
+  assert.ok(Math.max(...DING.partials.slice(1).map((partial) => partial.tail)) < 2.7);
+  const db = (time) => 20 * Math.log10(envelopeGain(time));
+  assert.ok(Math.abs(db(0.005)) < 0.2);
+  assert.ok(Math.abs(db(0.3) - -6) < 0.4);
+  assert.ok(Math.abs(db(1) - -12) < 0.4);
+  assert.ok(Math.abs(db(1.8) - -20) < 0.4);
+  assert.ok(Math.abs(db(2.4) - -30) < 0.4);
+  assert.ok(audibleUntil() >= 2.2);
   assert.equal(soundEnabled(null), true);
   assert.equal(soundEnabled("1"), true);
   assert.equal(soundEnabled("0"), false);

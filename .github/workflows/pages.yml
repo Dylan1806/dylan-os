@@ -24,6 +24,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Stamp build id
+        run: python3 scripts/stamp-build.py "$GITHUB_SHA"
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
         with:

@@ -1027,7 +1027,13 @@ function paintAnalog() {
 requestAnimationFrame(paintAnalog);
 
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
+  const build = new URL(import.meta.url).searchParams.get("v") || "dev";
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (sessionStorage.getItem("dashboard-sw") === build) return;
+    sessionStorage.setItem("dashboard-sw", build);
+    location.reload();
+  });
+  navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).catch(() => {});
 }
 
 boot();

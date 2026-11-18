@@ -1,24 +1,80 @@
-// Synthesized check chime. Same fourth-higher bell as before, with the decay
-// stretched so the fundamental rings for about 2.25s. A new check ducks the
-// one still ringing so voices do not stack.
+// Synthesized check chime. Pitch stays a fourth above the recording.
+// The fundamental stays audible until about 2.7s. A new check ducks the previous one.
 
 export const DING = {
   attack: 0.005,
-  decay: 2.25,
-  stop: 2.35,
+  decay: 2.7,
+  stop: 2.8,
   volume: 0.16,
   maxVoices: 1,
   partials: [
-    { freq: 1770, gain: 1, tail: 2.25 },
-    { freq: 3540, gain: 0.38, tail: 1.24 },
-    { freq: 2230, gain: 0.32, tail: 1.62 },
-    { freq: 2650, gain: 0.12, tail: 1.08 },
-    { freq: 4860, gain: 0.06, tail: 0.81 },
+    { freq: 1770, gain: 1, tail: 2.7 },
+    { freq: 3540, gain: 0.38, tail: 1.5 },
+    { freq: 2230, gain: 0.32, tail: 1.9 },
+    { freq: 2650, gain: 0.12, tail: 1.25 },
+    { freq: 4860, gain: 0.06, tail: 0.9 },
   ],
 };
 
+// Fundamental level relative to the peak, matched with exponential segments.
+export const ENVELOPE = [
+  [0, 0.0001],
+  [0.005, 1],
+  [0.3, 10 ** (-6 / 20)],
+  [1, 10 ** (-12 / 20)],
+  [1.8, 10 ** (-20 / 20)],
+  [2.4, 10 ** (-30 / 20)],
+  [2.7, 0.0001],
+];
+
 export function soundEnabled(stored) {
   return stored !== "0" && stored !== "false";
+}
+
+export function envelopeGain(time, tail = DING.decay) {
+  const scale = tail / DING.decay;
+  const points = [];
+  for (const [mark, level] of ENVELOPE) {
+    const at = mark <= DING.attack ? mark : DING.attack + (mark - DING.attack) * scale;
+    const clamped = Math.min(tail, at);
+    if (!points.length || clamped > points[points.length - 1][0] + 0.0005) points.push([clamped, level]);
+  }
+  if (time <= points[0][0]) return points[0][1];
+  if (time >= tail) return 0.0001;
+  for (let i = 1; i < points.length; i++) {
+    const [t0, g0] = points[i - 1];
+    const [t1, g1] = points[i];
+    if (time <= t1) return g0 * ((g1 / g0) ** ((time - t0) / (t1 - t0)));
+  }
+  return 0.0001;
+}
+
+export function audibleUntil(thresholdDb = -35, sampleRate = 22050) {
+  const duration = DING.stop;
+  const count = Math.floor(duration * sampleRate);
+  const samples = new Float32Array(count);
+  for (const partial of DING.partials) {
+    for (let i = 0; i < count; i++) {
+      const time = i / sampleRate;
+      if (time > partial.tail) continue;
+      samples[i] += Math.sin(2 * Math.PI * partial.freq * time) * partial.gain * envelopeGain(time, partial.tail);
+    }
+  }
+  const hop = Math.floor(0.05 * sampleRate);
+  let peak = 1e-9;
+  const windows = [];
+  for (let i = 0; i + hop <= count; i += hop) {
+    let sum = 0;
+    for (let j = 0; j < hop; j++) sum += samples[i + j] ** 2;
+    const rms = Math.sqrt(sum / hop);
+    if (rms > peak) peak = rms;
+    windows.push({ time: (i + hop / 2) / sampleRate, rms });
+  }
+  let last = 0;
+  for (const window of windows) {
+    if (20 * Math.log10(window.rms / peak) >= thresholdDb) last = window.time;
+  }
+  return last;
 }
 
 let context = null;
@@ -34,14 +90,17 @@ function audioContext() {
 
 function scheduleRing(gain, peak, now, tail) {
   const floor = 0.0001;
-  const rel = (mark) => Math.min(tail - 0.02, DING.attack + (mark - DING.attack) * (tail / DING.decay));
+  const scale = tail / DING.decay;
+  let last = -1;
   gain.setValueAtTime(floor, now);
-  gain.exponentialRampToValueAtTime(Math.max(floor, peak), now + DING.attack);
-  const drop = rel(0.219);
-  if (drop > DING.attack + 0.02) gain.exponentialRampToValueAtTime(Math.max(floor, peak * 0.355), now + drop);
-  const mid = rel(1.12);
-  if (mid > drop + 0.05) gain.exponentialRampToValueAtTime(Math.max(floor, peak * 0.079), now + mid);
-  gain.exponentialRampToValueAtTime(floor, now + tail);
+  for (const [mark, level] of ENVELOPE) {
+    const at = mark <= DING.attack ? mark : DING.attack + (mark - DING.attack) * scale;
+    const when = Math.min(tail, at);
+    if (when <= last + 0.001) continue;
+    gain.exponentialRampToValueAtTime(Math.max(floor, peak * level), now + when);
+    last = when;
+  }
+  if (last < tail - 0.001) gain.exponentialRampToValueAtTime(floor, now + tail);
 }
 
 function duck(voice, now) {

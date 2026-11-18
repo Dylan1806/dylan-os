@@ -1,4 +1,5 @@
-const CACHE = "dylan-os-shell-v5";
+const BUILD = "__BUILD_ID__";
+const CACHE = `dylan-os-shell-${BUILD}`;
 const ASSETS = [
   "./",
   "./index.html",
@@ -29,8 +30,10 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin || event.request.method !== "GET") return;
+  const fresh = event.request.mode === "navigate" || url.pathname.endsWith("/sw.js") || url.pathname.endsWith("/index.html");
+  const request = fresh ? new Request(event.request, { cache: "no-store" }) : event.request;
   event.respondWith(
-    fetch(event.request).then((response) => {
+    fetch(request).then((response) => {
       const copy = response.clone();
       caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => {});
       return response;
