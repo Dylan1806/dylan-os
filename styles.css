@@ -823,6 +823,42 @@ button.card { width: 100%; text-align: left; cursor: pointer; }
 
 .reading-line { margin-top: 8px; }
 
+.reading-next { margin-top: 4px; }
+
+.chapter-times { margin-top: 8px; }
+
+.chapter-times summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.chapter-times-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  max-height: 168px;
+  overflow: auto;
+}
+
+.chapter-time {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.chapter-time.is-next { background: var(--pill-accent-bg); }
+
+.chapter-time-when {
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .reading-form .field { margin: 8px 0; }
 
 .field input { font-size: 16px; }

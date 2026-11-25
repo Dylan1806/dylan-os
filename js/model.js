@@ -538,6 +538,34 @@ export function bookDescription({ title, author, chapters, chapter, meta = {} })
   return JSON.stringify(body);
 }
 
+// Audiobook tracks are optional. `chapter` counts finished tracks, and the
+// prologue is track n 0, so the next listen is the track whose n equals chapter.
+// chapter 0 means the prologue is next. A chapter past the last n has no next track.
+export function bookTracks(meta) {
+  if (!Array.isArray(meta?.tracks)) return [];
+  return meta.tracks
+    .filter((item) => item && typeof item === "object" && Number.isFinite(Number(item.n)))
+    .slice()
+    .sort((a, b) => Number(a.n) - Number(b.n));
+}
+
+export function nextListen(meta) {
+  const tracks = bookTracks(meta);
+  if (!tracks.length) return null;
+  let chapter = Number(meta?.chapter);
+  if (!Number.isFinite(chapter) || chapter < 0) chapter = 0;
+  chapter = Math.floor(chapter);
+  return tracks.find((item) => Number(item.n) === chapter) || null;
+}
+
+export function nextListenLabel(track) {
+  if (!track) return "";
+  const n = Number(track.n);
+  const title = str(track.title).trim();
+  const name = n === 0 ? (title || "Prologue") : [`Ch ${n}`, title].filter(Boolean).join(" ");
+  return `Next: ${name} · starts ${str(track.start).trim()} (${str(track.duration).trim()})`;
+}
+
 export function pickReading(tasks, today) {
   const open = (tasks || []).filter((task) => task && !task.completed);
   const books = open.filter((task) => canon(task.meta?.type) === "book");
@@ -547,8 +575,9 @@ export function pickReading(tasks, today) {
   habits.sort((a, b) => String(a.date || "9999-99-99").localeCompare(String(b.date || "9999-99-99")));
   const habit = habits[0] || null;
   const progress = book ? readingProgress(book.meta?.chapter, book.meta?.chapters) : null;
+  const tracks = book ? bookTracks(book.meta) : [];
   const doneToday = !!(habit && habit.date && today && habit.date > today);
-  return { book, habit, progress, doneToday };
+  return { book, habit, progress, doneToday, tracks, nextListen: tracks.length ? nextListen(book.meta) : null };
 }
 
 export function habitTarget(habits, label) {

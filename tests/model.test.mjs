@@ -19,6 +19,8 @@ import {
   adjustChapter,
   avatarColor,
   bookDescription,
+  nextListen,
+  nextListenLabel,
   buildModel,
   calendarEvents,
   habitTarget,
@@ -289,6 +291,28 @@ test("reading progress rounds and caps the chapter", () => {
   assert.equal(picked.book.meta.title, "Newer");
   assert.equal(picked.doneToday, true);
   assert.equal(picked.progress.pct, 25);
+  assert.deepEqual(picked.tracks, []);
+  assert.equal(picked.nextListen, null);
+});
+
+test("audiobook tracks name the next listen and survive a chapter update", () => {
+  const tracks = [
+    { n: 0, title: "Prologue", start: "0:00:00", duration: "25:05" },
+    { n: 1, title: "Bran", start: "0:25:05", duration: "19:11" },
+    { n: 2, title: "Catelyn", start: "0:44:16", duration: "20:00" },
+  ];
+  const meta = { type: "book", title: "Sample", author: "A. Writer", narrator: "A. Narrator", chapters: 3, chapter: 0, tracks };
+  assert.equal(nextListenLabel(nextListen(meta)), "Next: Prologue · starts 0:00:00 (25:05)");
+  const advanced = parseMeta(bookDescription({ title: "Sample", author: "A. Writer", chapters: 3, chapter: 1, meta }));
+  assert.equal(advanced.chapter, 1);
+  assert.equal(advanced.narrator, "A. Narrator");
+  assert.equal(advanced.tracks.length, 3);
+  assert.equal(advanced.tracks[0].duration, "25:05");
+  assert.equal(nextListenLabel(nextListen(advanced)), "Next: Ch 1 Bran · starts 0:25:05 (19:11)");
+  assert.equal(nextListen({ ...advanced, chapter: 3 }), null);
+  const picked = pickReading([{ completed: false, addedAt: "2026-02-01T00:00:00Z", meta: advanced }], "2026-11-17");
+  assert.equal(picked.nextListen.title, "Bran");
+  assert.equal(picked.tracks.length, 3);
 });
 
 test("api client paginates and closes a task", async () => {

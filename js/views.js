@@ -5,6 +5,7 @@ import {
   courseColor,
   habitTarget,
   initials,
+  nextListenLabel,
   readingProgress,
   meetingKind,
   sameCourse,
@@ -860,10 +861,29 @@ function rotc(state, actions) {
   );
 }
 
+function chapterTimes(tracks, next) {
+  const nextN = next == null ? null : Number(next.n);
+  return h("details", { class: "chapter-times" },
+    h("summary", null, "Chapter times"),
+    h("ol", { class: "chapter-times-list" }, tracks.map((track) => {
+      const n = Number(track.n);
+      const title = String(track.title || "").trim();
+      const name = title ? `${n} · ${title}` : String(n);
+      return h("li", { class: n === nextN ? "chapter-time is-next" : "chapter-time" },
+        h("span", { class: "chapter-time-name" }, name),
+        h("span", { class: "chapter-time-when" }, `${String(track.start || "").trim()} · ${String(track.duration || "").trim()}`),
+      );
+    })),
+  );
+}
+
 function readingCard(state, actions) {
   const reading = state.model.reading || {};
   const book = reading.book;
   const progress = book ? readingProgress(book.meta.chapter, book.meta.chapters) : null;
+  const tracks = book && Array.isArray(reading.tracks) ? reading.tracks : [];
+  const next = tracks.length ? reading.nextListen : null;
+  const narrator = tracks.length ? String(book.meta?.narrator || "").trim() : "";
   const done = !!(reading.doneToday || state.readingUndo);
   const logged = (reading.habit?.completedCount || 0) + (state.readingUndo ? 1 : 0);
   return h("div", null,
@@ -871,11 +891,14 @@ function readingCard(state, actions) {
     card([
       book ? h("div", { class: "title-500" }, book.meta.title || book.content) : h("p", { class: "sub" }, "Add a book. It is stored in Todoist, not in this site."),
       book && book.meta.author ? h("div", { class: "sub mb6" }, book.meta.author) : null,
+      narrator ? h("div", { class: "sub mb6" }, `Narrated by ${narrator}`) : null,
       progress ? prog(progress.chapter, progress.chapters, "#5aa7e8") : null,
       progress ? h("div", { class: "reading-line" },
         h("span", null, progress.finished ? "Finished" : `Chapter ${progress.chapter} of ${progress.chapters}`),
         done ? pill("success", "Done today") : null,
       ) : null,
+      next ? h("div", { class: "sub reading-next" }, nextListenLabel(next)) : null,
+      tracks.length ? chapterTimes(tracks, next) : null,
       logged > 0 ? h("div", { class: "sub" }, `Logged ${logged} time${logged === 1 ? "" : "s"}`) : null,
       book ? h("div", { class: "task-row" },
         h("button", {
