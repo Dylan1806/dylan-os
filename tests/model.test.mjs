@@ -289,10 +289,22 @@ test("reading progress rounds and caps the chapter", () => {
     { completed: false, addedAt: "2026-01-02T00:00:00Z", date: "2026-11-18", meta: { type: "reading-habit" }, completedCount: 4 },
   ], "2026-11-17");
   assert.equal(picked.book.meta.title, "Newer");
+  assert.equal(picked.books.map((item) => item.meta.title).join(","), "Newer,Older");
   assert.equal(picked.doneToday, true);
   assert.equal(picked.progress.pct, 25);
   assert.deepEqual(picked.tracks, []);
   assert.equal(picked.nextListen, null);
+  const marked = pickReading([
+    { id: "old", completed: false, addedAt: "2026-01-01T00:00:00Z", meta: { type: "book", title: "Older", chapters: 5, chapter: 1, current: true } },
+    { id: "new", completed: false, addedAt: "2026-02-01T00:00:00Z", meta: { type: "book", title: "Newer", chapters: 8, chapter: 2 } },
+  ], "2026-11-17");
+  assert.equal(marked.book.id, "old");
+  assert.equal(marked.books.length, 2);
+  const both = pickReading([
+    { id: "old", completed: false, addedAt: "2026-01-01T00:00:00Z", meta: { type: "book", title: "Older", current: true, chapters: 5, chapter: 1 } },
+    { id: "new", completed: false, addedAt: "2026-02-01T00:00:00Z", meta: { type: "book", title: "Newer", current: true, chapters: 8, chapter: 2 } },
+  ], "2026-11-17");
+  assert.equal(both.book.id, "new");
 });
 
 test("audiobook tracks name the next listen and survive a chapter update", () => {
@@ -301,10 +313,11 @@ test("audiobook tracks name the next listen and survive a chapter update", () =>
     { n: 1, title: "Bran", start: "0:25:05", duration: "19:11" },
     { n: 2, title: "Catelyn", start: "0:44:16", duration: "20:00" },
   ];
-  const meta = { type: "book", title: "Sample", author: "A. Writer", narrator: "A. Narrator", chapters: 3, chapter: 0, tracks };
+  const meta = { type: "book", title: "Sample", author: "A. Writer", narrator: "A. Narrator", current: true, chapters: 3, chapter: 0, tracks };
   assert.equal(nextListenLabel(nextListen(meta)), "Next: Prologue · starts 0:00:00 (25:05)");
   const advanced = parseMeta(bookDescription({ title: "Sample", author: "A. Writer", chapters: 3, chapter: 1, meta }));
   assert.equal(advanced.chapter, 1);
+  assert.equal(advanced.current, true);
   assert.equal(advanced.narrator, "A. Narrator");
   assert.equal(advanced.tracks.length, 3);
   assert.equal(advanced.tracks[0].duration, "25:05");

@@ -85,6 +85,7 @@ const actions = {
   openReadingForm,
   closeReadingForm,
   saveBook,
+  selectBook,
   adjustChapter: changeChapter,
   readToday,
   undoReading,
@@ -436,7 +437,7 @@ async function saveBook(input) {
       author: parsed.author,
       chapters: parsed.chapters,
       chapter: parsed.chapter,
-      meta: editing && previous ? previous.meta : { type: "book" },
+      meta: editing && previous ? previous.meta : { type: "book", current: true },
     });
     if (editing && previous) {
       await updateTask(state.token, previous.id, { content: parsed.title, description });
@@ -453,14 +454,34 @@ async function saveBook(input) {
         section_id: section.id,
       });
       if (!created?.id) throw new TodoistError("Todoist did not save the book.");
+      if (!created.added_at) created.added_at = new Date().toISOString();
       state.raw.osTasks = [...(state.raw.osTasks || []), created];
-      if (previous) {
+      rebuild();
+      const others = (state.model.reading?.books || []).filter((item) => String(item.id) !== String(created.id) && item.meta?.current === true);
+      for (const item of others) {
+        const meta = { ...item.meta };
+        delete meta.current;
+        const cleared = bookDescription({
+          title: item.meta.title || item.content,
+          author: item.meta.author,
+          chapters: item.meta.chapters,
+          chapter: item.meta.chapter,
+          meta,
+        });
+        const local = findOsTask(item.id);
+        if (local) local.description = cleared;
         try {
-          await closeTask(state.token, previous.id);
-          state.raw.osTasks = state.raw.osTasks.filter((task) => String(task.id) !== String(previous.id));
+          await updateTask(state.token, item.id, { description: cleared });
         } catch (error) {
           if (error instanceof TodoistError && error.auth) throw error;
-          state.banner = "The new book was saved, but the previous book could not be closed.";
+          if (local) local.description = item.meta ? bookDescription({
+            title: item.meta.title || item.content,
+            author: item.meta.author,
+            chapters: item.meta.chapters,
+            chapter: item.meta.chapter,
+            meta: item.meta,
+          }) : local.description;
+          state.banner = "The new book was saved, but the previous selection could not be updated.";
         }
       }
     }
@@ -475,6 +496,54 @@ async function saveBook(input) {
       return;
     }
     state.readingError = error instanceof TodoistError ? error.message : "Could not save the book.";
+    render();
+  }
+}
+
+async function selectBook(id) {
+  const books = state.model.reading?.books || [];
+  const chosen = books.find((item) => String(item.id) === String(id));
+  if (!chosen || String(state.model.reading?.book?.id) === String(chosen.id) || state.readingBusy) return;
+  const updates = [];
+  for (const item of books) {
+    const selected = String(item.id) === String(chosen.id);
+    if ((item.meta?.current === true) === selected) continue;
+    const meta = { ...item.meta };
+    if (selected) meta.current = true;
+    else delete meta.current;
+    const local = findOsTask(item.id);
+    if (!local) continue;
+    updates.push({
+      id: item.id,
+      local,
+      previous: local.description,
+      description: bookDescription({
+        title: item.meta.title || item.content,
+        author: item.meta.author,
+        chapters: item.meta.chapters,
+        chapter: item.meta.chapter,
+        meta,
+      }),
+    });
+  }
+  if (!updates.length) return;
+  state.readingBusy = true;
+  for (const update of updates) update.local.description = update.description;
+  rebuild();
+  renderShellOnly();
+  try {
+    for (const update of updates) await updateTask(state.token, update.id, { description: update.description });
+    state.readingBusy = false;
+    renderShellOnly();
+  } catch (error) {
+    for (const update of updates) update.local.description = update.previous;
+    state.readingBusy = false;
+    rebuild();
+    if (error instanceof TodoistError && error.auth) {
+      forceAuth(error.message);
+      return;
+    }
+    state.banner = "Could not switch books.";
     render();
   }
 }

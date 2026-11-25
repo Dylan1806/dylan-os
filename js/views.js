@@ -879,6 +879,7 @@ function chapterTimes(tracks, next) {
 
 function readingCard(state, actions) {
   const reading = state.model.reading || {};
+  const books = Array.isArray(reading.books) ? reading.books : [];
   const book = reading.book;
   const progress = book ? readingProgress(book.meta.chapter, book.meta.chapters) : null;
   const tracks = book && Array.isArray(reading.tracks) ? reading.tracks : [];
@@ -889,6 +890,16 @@ function readingCard(state, actions) {
   return h("div", null,
     bar("📖", "Reading", MAROON),
     card([
+      books.length > 1 ? h("label", { class: "field reading-picker" }, "Book",
+        h("select", {
+          "aria-label": "Book",
+          disabled: state.readingBusy,
+          onchange: (event) => actions.selectBook(event.target.value),
+        }, books.map((item) => h("option", {
+          value: String(item.id),
+          selected: book && String(item.id) === String(book.id),
+        }, item.meta?.title || item.content))),
+      ) : null,
       book ? h("div", { class: "title-500" }, book.meta.title || book.content) : h("p", { class: "sub" }, "Add a book. It is stored in Todoist, not in this site."),
       book && book.meta.author ? h("div", { class: "sub mb6" }, book.meta.author) : null,
       narrator ? h("div", { class: "sub mb6" }, `Narrated by ${narrator}`) : null,
@@ -917,7 +928,7 @@ function readingCard(state, actions) {
         ),
       ) : null,
       state.readingForm ? readingForm(state, actions, book) : h("div", { class: "reading-actions" },
-        h("button", { type: "button", class: "ghost", onclick: () => actions.openReadingForm("add") }, book ? "Change book" : "Add book"),
+        h("button", { type: "button", class: "ghost", onclick: () => actions.openReadingForm("add") }, "Add book"),
         book ? h("button", { type: "button", class: "ghost", onclick: () => actions.openReadingForm("edit") }, "Edit") : null,
       ),
       state.readingError ? h("div", { class: "alert mt8", role: "alert" }, state.readingError) : null,
@@ -935,7 +946,7 @@ function readingForm(state, actions, book) {
       actions.saveBook(Object.fromEntries(new FormData(event.target)));
     },
   },
-    h("div", { class: "title-500 mb6" }, editing ? "Edit book" : (book ? "Change book" : "Add book")),
+    h("div", { class: "title-500 mb6" }, editing ? "Edit book" : "Add book"),
     h("label", { class: "field" }, "Title",
       h("input", { name: "title", required: true, value: editing ? (book.meta.title || book.content) : "", autocomplete: "off" }),
     ),

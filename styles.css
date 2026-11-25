@@ -724,7 +724,7 @@ button.card { width: 100%; text-align: left; cursor: pointer; }
 
 .field { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; font-size: 13px; font-weight: 500; }
 
-.field input, .modal input {
+.field input, .field select, .modal input {
   width: 100%;
   padding: 8px 10px;
   border-radius: 8px;
@@ -732,6 +732,8 @@ button.card { width: 100%; text-align: left; cursor: pointer; }
   background: var(--bg);
   color: var(--text);
 }
+
+.reading-picker { margin: 0 0 10px; }
 
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 

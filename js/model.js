@@ -541,6 +541,12 @@ export function bookDescription({ title, author, chapters, chapter, meta = {} })
 // Audiobook tracks are optional. `chapter` counts finished tracks, and the
 // prologue is track n 0, so the next listen is the track whose n equals chapter.
 // chapter 0 means the prologue is next. A chapter past the last n has no next track.
+//
+// Several open books can sit in the Reading section at once. The one shown is
+// the newest whose description has `"current": true`. Switching books writes
+// that flag onto the chosen task and removes it from the others, leaving every
+// other description field in place. If none is marked, the newest open book
+// is shown. A finished (completed) book is not listed.
 export function bookTracks(meta) {
   if (!Array.isArray(meta?.tracks)) return [];
   return meta.tracks
@@ -570,14 +576,15 @@ export function pickReading(tasks, today) {
   const open = (tasks || []).filter((task) => task && !task.completed);
   const books = open.filter((task) => canon(task.meta?.type) === "book");
   books.sort((a, b) => String(b.addedAt).localeCompare(String(a.addedAt)) || (b.childOrder || 0) - (a.childOrder || 0));
-  const book = books[0] || null;
+  const marked = books.filter((book) => book.meta?.current === true);
+  const book = (marked.length ? marked : books)[0] || null;
   const habits = open.filter((task) => canon(task.meta?.type) === "reading-habit");
   habits.sort((a, b) => String(a.date || "9999-99-99").localeCompare(String(b.date || "9999-99-99")));
   const habit = habits[0] || null;
   const progress = book ? readingProgress(book.meta?.chapter, book.meta?.chapters) : null;
   const tracks = book ? bookTracks(book.meta) : [];
   const doneToday = !!(habit && habit.date && today && habit.date > today);
-  return { book, habit, progress, doneToday, tracks, nextListen: tracks.length ? nextListen(book.meta) : null };
+  return { books, book, habit, progress, doneToday, tracks, nextListen: tracks.length ? nextListen(book.meta) : null };
 }
 
 export function habitTarget(habits, label) {
